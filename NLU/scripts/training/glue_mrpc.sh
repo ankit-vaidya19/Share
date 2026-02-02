@@ -1,0 +1,28 @@
+python run_glue.py \
+  --model_name_or_path roberta-base \
+  --task_name mrpc \
+  --do_train \
+  --do_eval \
+  --max_seq_length 512 \
+  --per_device_train_batch_size 32 \
+  --seed 0 \
+  --learning_rate 4e-4 \
+  --lr_scheduler_type 'reduce_lr_on_plateau' \
+  --weight_decay 0.1 \
+  --warmup_ratio 0.06 \
+  --num_train_epochs 30 \
+  --evaluation_strategy epoch \
+  --apply_eigenflux True \
+  --eigenflux_r 8 \
+  --eigenflux_num_components 32 \
+  --eigenflux_num_rank_updates 2 \
+  --eigenflux_use_rank_updates True \
+  --eigenflux_adapter_name mrpc \
+  --eigenflux_load_path ./cola_eigenflux_trained \
+  --eigenflux_save_path ./mrpc_eigenflux_trained \
+  --output_dir ./mrpc \
+  --overwrite_output_dir \
+  --logging_dir ./mrpc \
+  --logging_steps 10 \
+  --report_to wandb \
+  --run_name mrpc

@@ -1,0 +1,28 @@
+python run_glue.py \
+  --model_name_or_path roberta-base \
+  --task_name qnli \
+  --do_train \
+  --do_eval \
+  --max_seq_length 512 \
+  --per_device_train_batch_size 32 \
+  --seed 0 \
+  --learning_rate 4e-4 \
+  --lr_scheduler_type 'reduce_lr_on_plateau' \
+  --weight_decay 0.1 \
+  --warmup_ratio 0.06 \
+  --num_train_epochs 13 \
+  --evaluation_strategy epoch \
+  --apply_eigenflux True \
+  --eigenflux_r 8 \
+  --eigenflux_num_components 32 \
+  --eigenflux_num_rank_updates 2 \
+  --eigenflux_use_rank_updates True \
+  --eigenflux_adapter_name qnli \
+  --eigenflux_load_path ./stsb_eigenflux_trained \
+  --eigenflux_save_path ./qnli_eigenflux_trained \
+  --output_dir ./qnli \
+  --overwrite_output_dir \
+  --logging_dir ./qnli \
+  --logging_steps 10 \
+  --report_to wandb \
+  --run_name qnli
