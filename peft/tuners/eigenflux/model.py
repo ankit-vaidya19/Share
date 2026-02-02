@@ -31,48 +31,48 @@ from peft.tuners.tuners_utils import (
     check_target_module_exists,
 )
 from peft.utils import (
-    TRANSFORMERS_MODELS_TO_EIGENLORA_TARGET_MODULES_MAPPING,
+    TRANSFORMERS_MODELS_TO_EIGENFLUX_TARGET_MODULES_MAPPING,
     ModulesToSaveWrapper,
     _get_submodules,
 )
-from .config import EigenLoRAConfig
-from .layer import Linear, EigenLoRALayer
+from .config import EigenFluxConfig
+from .layer import Linear, EigenFluxLayer
 
 
-class EigenLoRAModel(BaseTuner):
+class EigenFluxModel(BaseTuner):
     """
-    Creates EigenLoRA model from a pretrained transformers model.
+    Creates EigenFlux model from a pretrained transformers model.
 
     Args:
         model ([`~transformers.PreTrainedModel`]): The model to be adapted.
-        config ([`EigenLoRAConfig`]): The configuration of the EigenLoRA model.
+        config ([`EigenFluxConfig`]): The configuration of the EigenFlux model.
         adapter_name (`str`): The name of the adapter, defaults to `"default"`.
 
     Returns:
-        `torch.nn.Module`: The EigenLoRA model.
+        `torch.nn.Module`: The EigenFlux model.
 
     Example:
 
         ```py
         >>> from transformers import AutoModelForCausalLM
-        >>> from peft import EigenLoRAConfig, get_peft_model
+        >>> from peft import EigenFluxConfig, get_peft_model
 
         >>> base_model = AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
-        >>> config = EigenLoRAConfig(r=32,num_components=12)
+        >>> config = EigenFluxConfig(r=32,num_components=12)
         >>> model = get_peft_model(base_model, config)
         ```
 
     **Attributes**:
         - **model** ([`~transformers.PreTrainedModel`]) -- The model to be adapted.
-        - **peft_config** ([`EigenLoRAConfig`]): The configuration of the EigenLoRA model.
+        - **peft_config** ([`EigenFluxConfig`]): The configuration of the EigenFlux model.
     """
 
-    prefix: str = "eigenlora_"
+    prefix: str = "eigenflux_"
 
     def __init__(self, model, config, adapter_name) -> None:
         super().__init__(model, config, adapter_name)
 
-    def _check_new_adapter_config(self, config: EigenLoRAConfig) -> None:
+    def _check_new_adapter_config(self, config: EigenFluxConfig) -> None:
         """
         A helper method to check the config when a new adapter is being added.
 
@@ -89,12 +89,12 @@ class EigenLoRAModel(BaseTuner):
             )
 
     @staticmethod
-    def _check_target_module_exists(eigenlora_config, key):
-        return check_target_module_exists(eigenlora_config, key)
+    def _check_target_module_exists(eigenflux_config, key):
+        return check_target_module_exists(eigenflux_config, key)
 
     def _create_and_replace(
         self,
-        eigenlora_config,
+        eigenflux_config,
         adapter_name,
         target,
         target_name,
@@ -105,12 +105,12 @@ class EigenLoRAModel(BaseTuner):
         if current_key is None:
             raise ValueError("Current Key shouldn't be `None`")
 
-        r = eigenlora_config.r
+        r = eigenflux_config.r
         bias = hasattr(target, "bias") and target.bias is not None
         kwargs = {
             "r": r,
-            "num_components": eigenlora_config.num_components,
-            "num_rank_updates": eigenlora_config.num_rank_updates,
+            "num_components": eigenflux_config.num_components,
+            "num_rank_updates": eigenflux_config.num_rank_updates,
         }
         kwargs["bias"] = bias
         # TODO: add quantization support
@@ -119,13 +119,13 @@ class EigenLoRAModel(BaseTuner):
             target.update_layer(
                 adapter_name,
                 r,
-                eigenlora_config.num_components,
-                eigenlora_config.num_rank_updates,
-                eigenlora_config.use_rank_updates,
+                eigenflux_config.num_components,
+                eigenflux_config.num_rank_updates,
+                eigenflux_config.use_rank_updates,
             )
         else:
             new_module = self._create_new_module(
-                eigenlora_config,
+                eigenflux_config,
                 adapter_name,
                 target,
                 **kwargs,
@@ -159,7 +159,7 @@ class EigenLoRAModel(BaseTuner):
 
         # dispatch to correct device
         for name, module in new_module.named_modules():
-            if "eigenlora_" in name:
+            if "eigenflux_" in name:
                 module.to(child.weight.device)
 
     def _mark_only_adapters_as_trainable(self, model: nn.Module) -> None:
@@ -179,7 +179,7 @@ class EigenLoRAModel(BaseTuner):
             elif bias == "vera_only":
                 for m in model.modules():
                     if (
-                        isinstance(m, EigenLoRALayer)
+                        isinstance(m, EigenFluxLayer)
                         and hasattr(m, "bias")
                         and m.bias is not None
                     ):
@@ -190,7 +190,7 @@ class EigenLoRAModel(BaseTuner):
                 )
 
     @staticmethod
-    def _create_new_module(eigenlora_config, adapter_name, target, **kwargs):
+    def _create_new_module(eigenflux_config, adapter_name, target, **kwargs):
         bias = kwargs.pop("bias", False)
 
         if isinstance(target, BaseTunerLayer):
@@ -221,10 +221,10 @@ class EigenLoRAModel(BaseTuner):
         new_module = Linear(
             base_layer=target_base_layer,
             adapter_name=adapter_name,
-            r=eigenlora_config.r,
-            num_components=eigenlora_config.num_components,
-            num_rank_updates=eigenlora_config.num_rank_updates,
-            use_rank_updates=eigenlora_config.use_rank_updates,
+            r=eigenflux_config.r,
+            num_components=eigenflux_config.num_components,
+            num_rank_updates=eigenflux_config.num_rank_updates,
+            use_rank_updates=eigenflux_config.use_rank_updates,
         )
 
         return new_module
@@ -273,7 +273,7 @@ class EigenLoRAModel(BaseTuner):
 
     def set_adapter(self, adapter_name):
         for module in self.model.modules():
-            if isinstance(module, EigenLoRALayer):
+            if isinstance(module, EigenFluxLayer):
                 if module.merged:
                     warnings.warn(
                         "Adapter cannot be set when the model is merged. Unmerging the model first."
@@ -289,11 +289,11 @@ class EigenLoRAModel(BaseTuner):
         if peft_config.target_modules is None:
             if (
                 model_config["model_type"]
-                not in TRANSFORMERS_MODELS_TO_EIGENLORA_TARGET_MODULES_MAPPING
+                not in TRANSFORMERS_MODELS_TO_EIGENFLUX_TARGET_MODULES_MAPPING
             ):
                 raise ValueError("Please specify `target_modules` in `peft_config`")
             peft_config.target_modules = set(
-                TRANSFORMERS_MODELS_TO_EIGENLORA_TARGET_MODULES_MAPPING[
+                TRANSFORMERS_MODELS_TO_EIGENFLUX_TARGET_MODULES_MAPPING[
                     model_config["model_type"]
                 ]
             )
@@ -354,7 +354,7 @@ class EigenLoRAModel(BaseTuner):
         new_adapter = None
         for key in key_list:
             _, target, _ = _get_submodules(self.model, key)
-            if isinstance(target, EigenLoRALayer):
+            if isinstance(target, EigenFluxLayer):
                 target.delete_adapter(adapter_name)
                 if new_adapter is None:
                     new_adapter = target.active_adapter[:]
@@ -404,7 +404,7 @@ class EigenLoRAModel(BaseTuner):
         """
         return self._unload_and_optionally_merge(merge=False)
 
-    def recalculate_eigenlora(self, adapter_name):
+    def recalculate_eigenflux(self, adapter_name):
         for module in self.model.modules():
             if isinstance(module, Linear):
                 module.recalculate(adapter_name)

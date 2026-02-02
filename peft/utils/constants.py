@@ -19,13 +19,23 @@ from transformers import BloomPreTrainedModel
 # needed for prefix-tuning of bloom model
 def bloom_model_postprocess_past_key_value(past_key_values):
     past_key_values = torch.cat(past_key_values)
-    total_layers, batch_size, num_attention_heads, num_virtual_tokens, head_dim = past_key_values.shape
+    total_layers, batch_size, num_attention_heads, num_virtual_tokens, head_dim = (
+        past_key_values.shape
+    )
     keys = past_key_values[: total_layers // 2]
     keys = keys.transpose(2, 3).reshape(
-        total_layers // 2, batch_size * num_attention_heads, head_dim, num_virtual_tokens
+        total_layers // 2,
+        batch_size * num_attention_heads,
+        head_dim,
+        num_virtual_tokens,
     )
     values = past_key_values[total_layers // 2 :]
-    values = values.reshape(total_layers // 2, batch_size * num_attention_heads, num_virtual_tokens, head_dim)
+    values = values.reshape(
+        total_layers // 2,
+        batch_size * num_attention_heads,
+        num_virtual_tokens,
+        head_dim,
+    )
 
     return tuple(zip(keys, values))
 
@@ -49,7 +59,9 @@ if hasattr(BloomPreTrainedModel, "_convert_to_standard_cache"):
     # special handling for bloom architecture was fixed in:
     # https://github.com/huggingface/transformers/pull/31445
     # the _convert_to_standard_cache method is removed in the PR and thus serves as an indicator
-    TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING["bloom"] = bloom_model_postprocess_past_key_value
+    TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING["bloom"] = (
+        bloom_model_postprocess_past_key_value
+    )
 
 TRANSFORMERS_MODELS_TO_LNTUNING_TARGET_MODULES_MAPPING = {
     "llama": ["input_layernorm", "post_attention_layernorm", "norm"],
@@ -253,7 +265,7 @@ TRANSFORMERS_MODELS_TO_FOURIERFT_TARGET_MODULES_MAPPING = {
     "qwen2": ["q_proj", "v_proj"],
 }
 
-TRANSFORMERS_MODELS_TO_EIGENLORA_TARGET_MODULES_MAPPING = {
+TRANSFORMERS_MODELS_TO_EIGENFLUX_TARGET_MODULES_MAPPING = {
     "t5": ["q", "v"],
     "mt5": ["q", "v"],
     "bart": ["q_proj", "v_proj"],

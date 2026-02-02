@@ -27,14 +27,22 @@ import packaging.version
 import torch
 import transformers
 from accelerate import dispatch_model, infer_auto_device_map
-from accelerate.hooks import AlignDevicesHook, add_hook_to_module, remove_hook_from_submodules
+from accelerate.hooks import (
+    AlignDevicesHook,
+    add_hook_to_module,
+    remove_hook_from_submodules,
+)
 from accelerate.utils import get_balanced_memory, named_module_tensors
 from huggingface_hub import HfFileSystem, ModelCard, ModelCardData, hf_hub_download
 from safetensors import safe_open
 from safetensors.torch import save_file as safe_save_file
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers import PreTrainedModel
-from transformers.modeling_outputs import QuestionAnsweringModelOutput, SequenceClassifierOutput, TokenClassifierOutput
+from transformers.modeling_outputs import (
+    QuestionAnsweringModelOutput,
+    SequenceClassifierOutput,
+    TokenClassifierOutput,
+)
 from transformers.utils import PushToHubMixin
 
 from . import __version__
@@ -59,7 +67,7 @@ from .tuners import (
     VeraModel,
     XLoraConfig,
     XLoraModel,
-    EigenLoRAModel,
+    EigenFluxModel,
 )
 from .tuners.tuners_utils import BaseTuner, BaseTunerLayer
 from .utils import (
@@ -99,7 +107,7 @@ PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.FOURIERFT: FourierFTModel,
     PeftType.XLORA: XLoraModel,
     PeftType.HRA: HRAModel,
-    PeftType.EIGENLORA: EigenLoRAModel,
+    PeftType.EIGENFLUX: EigenFluxModel,
 }
 
 
@@ -168,7 +176,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         # the `pretraining_tp` is set for some models to simulate Tensor Parallelism during inference to avoid
         # numerical differences, https://github.com/pytorch/pytorch/issues/76232 - to avoid any unexpected
         # behavior we disable that in this line.
-        if hasattr(self.base_model, "config") and hasattr(self.base_model.config, "pretraining_tp"):
+        if hasattr(self.base_model, "config") and hasattr(
+            self.base_model.config, "pretraining_tp"
+        ):
             self.base_model.config.pretraining_tp = 1
 
     @property
@@ -212,8 +222,8 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         is_main_process: bool = True,
         convert_pissa_to_lora: Optional[str] = None,
         path_initial_model_for_weight_conversion: Optional[str] = None,
-        save_eigenlora_loadings:bool = True,
-        save_eigenlora_components:bool = False,
+        save_eigenflux_loadings: bool = True,
+        save_eigenflux_components: bool = False,
         **kwargs: Any,
     ) -> None:
         r"""
@@ -251,7 +261,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
         """
         if os.path.isfile(save_directory):
-            raise ValueError(f"Provided path ({save_directory}) should be a directory, not a file")
+            raise ValueError(
+                f"Provided path ({save_directory}) should be a directory, not a file"
+            )
 
         if selected_adapters is None:
             selected_adapters = list(self.peft_config.keys())
@@ -272,8 +284,15 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             )
             path_initial_model_for_weight_conversion = convert_pissa_to_lora
 
-        def save_mutated_as_lora(peft_config, path_initial_model_for_weight_conversion, output_state_dict, kwargs):
-            if peft_config.use_rslora and (peft_config.rank_pattern or peft_config.alpha_pattern):
+        def save_mutated_as_lora(
+            peft_config,
+            path_initial_model_for_weight_conversion,
+            output_state_dict,
+            kwargs,
+        ):
+            if peft_config.use_rslora and (
+                peft_config.rank_pattern or peft_config.alpha_pattern
+            ):
                 msg = (
                     "Passing `path_initial_model_for_weight_conversion` to `save_pretrained` is not supported when "
                     "using `rank_pattern` or `alpha_pattern` at the same time as `use_rslora=True`."
@@ -281,21 +300,33 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 raise ValueError(msg)
 
             if not any(
-                str(peft_config.init_lora_weights).lower().startswith(prefix) for prefix in ["pissa", "olora", "true"]
+                str(peft_config.init_lora_weights).lower().startswith(prefix)
+                for prefix in ["pissa", "olora", "true"]
             ):
                 warnings.warn(
                     "`path_initial_model_for_weight_conversion` only works for converting a PiSSA or OLoRA adapter to "
                     "a LoRA adapter"
                 )
-            initial_adapter_name = os.path.basename(path_initial_model_for_weight_conversion)
+            initial_adapter_name = os.path.basename(
+                path_initial_model_for_weight_conversion
+            )
             try:
                 self.load_adapter(
                     os.path.dirname(path_initial_model_for_weight_conversion),
                     subfolder=initial_adapter_name,
                     adapter_name=initial_adapter_name,
                 )
-                is_pissa = str(self.peft_config[initial_adapter_name].init_lora_weights).lower().startswith("pissa")
-                is_olora = str(self.peft_config[initial_adapter_name].init_lora_weights).lower() == "olora"
+                is_pissa = (
+                    str(self.peft_config[initial_adapter_name].init_lora_weights)
+                    .lower()
+                    .startswith("pissa")
+                )
+                is_olora = (
+                    str(
+                        self.peft_config[initial_adapter_name].init_lora_weights
+                    ).lower()
+                    == "olora"
+                )
                 if is_pissa or is_olora:
                     raise ValueError(
                         "The `init_lora_weights` parameter of the initial adapter should be set to `True`. "
@@ -321,10 +352,14 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 state_dict=kwargs.get("state_dict", None),
                 adapter_name=adapter_name,
                 save_embedding_layers=save_embedding_layers,
-                save_eigenlora_loadings=save_eigenlora_loadings,
-                save_eigenlora_components = save_eigenlora_components
+                save_eigenflux_loadings=save_eigenflux_loadings,
+                save_eigenflux_components=save_eigenflux_components,
             )
-            output_dir = os.path.join(save_directory, adapter_name) if adapter_name != "default" else save_directory
+            output_dir = (
+                os.path.join(save_directory, adapter_name)
+                if adapter_name != "default"
+                else save_directory
+            )
             os.makedirs(output_dir, exist_ok=True)
 
             if is_main_process and safe_serialization:
@@ -342,18 +377,27 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                         ptrs[id(tensor)].append(name)
 
                 # These are all the pointers of shared tensors.
-                shared_ptrs = {ptr: names for ptr, names in ptrs.items() if len(names) > 1}
+                shared_ptrs = {
+                    ptr: names for ptr, names in ptrs.items() if len(names) > 1
+                }
 
                 for _, names in shared_ptrs.items():
                     # Here we just clone the shared tensors to avoid tensor aliasing which is
                     # not supported in safetensors.
                     for shared_tensor_name in names[1:]:
-                        output_state_dict[shared_tensor_name] = output_state_dict[shared_tensor_name].clone()
+                        output_state_dict[shared_tensor_name] = output_state_dict[
+                            shared_tensor_name
+                        ].clone()
                 if path_initial_model_for_weight_conversion is not None:
                     peft_config.init_lora_weights = True
-                    peft_config.save_pretrained(path_initial_model_for_weight_conversion)
+                    peft_config.save_pretrained(
+                        path_initial_model_for_weight_conversion
+                    )
                     output_state_dict = save_mutated_as_lora(
-                        peft_config, path_initial_model_for_weight_conversion, output_state_dict, kwargs
+                        peft_config,
+                        path_initial_model_for_weight_conversion,
+                        output_state_dict,
+                        kwargs,
                     )
                 safe_save_file(
                     output_state_dict,
@@ -363,9 +407,14 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             elif is_main_process:
                 if path_initial_model_for_weight_conversion is not None:
                     peft_config.init_lora_weights = True
-                    peft_config.save_pretrained(path_initial_model_for_weight_conversion)
+                    peft_config.save_pretrained(
+                        path_initial_model_for_weight_conversion
+                    )
                     output_state_dict = save_mutated_as_lora(
-                        peft_config, path_initial_model_for_weight_conversion, output_state_dict, kwargs
+                        peft_config,
+                        path_initial_model_for_weight_conversion,
+                        output_state_dict,
+                        kwargs,
                     )
                 torch.save(output_state_dict, os.path.join(output_dir, WEIGHTS_NAME))
 
@@ -404,11 +453,19 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                         peft_config.lora_alpha *= 2**0.5
 
                     if peft_config.rank_pattern:
-                        peft_config.rank_pattern = {key: 2 * val for key, val in peft_config.rank_pattern.items()}
+                        peft_config.rank_pattern = {
+                            key: 2 * val
+                            for key, val in peft_config.rank_pattern.items()
+                        }
                     if peft_config.alpha_pattern:
-                        peft_config.alpha_pattern = {key: 2 * val for key, val in peft_config.alpha_pattern.items()}
+                        peft_config.alpha_pattern = {
+                            key: 2 * val
+                            for key, val in peft_config.alpha_pattern.items()
+                        }
 
-                peft_config.save_pretrained(output_dir, auto_mapping_dict=auto_mapping_dict)
+                peft_config.save_pretrained(
+                    output_dir, auto_mapping_dict=auto_mapping_dict
+                )
             peft_config.inference_mode = inference_mode
 
     @classmethod
@@ -460,7 +517,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             kwargs: (`optional`):
                 Additional keyword arguments passed along to the specific PEFT configuration class.
         """
-        from .mapping import MODEL_TYPE_TO_PEFT_MODEL_MAPPING, PEFT_TYPE_TO_CONFIG_MAPPING
+        from .mapping import (
+            MODEL_TYPE_TO_PEFT_MODEL_MAPPING,
+            PEFT_TYPE_TO_CONFIG_MAPPING,
+        )
 
         # load the config
         if config is None:
@@ -477,14 +537,18 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         elif isinstance(config, PeftConfig):
             config.inference_mode = not is_trainable
         else:
-            raise ValueError(f"The input config must be a PeftConfig, got {config.__class__}")
+            raise ValueError(
+                f"The input config must be a PeftConfig, got {config.__class__}"
+            )
 
         # Runtime configuration, if supported
         if hasattr(config, "runtime_config"):
             config.runtime_config.ephemeral_gpu_offload = ephemeral_gpu_offload
         else:
             if ephemeral_gpu_offload:
-                warnings.warn("Ephemeral GPU offloading is not supported for this model. Ignoring.")
+                warnings.warn(
+                    "Ephemeral GPU offloading is not supported for this model. Ignoring."
+                )
 
         if hasattr(model, "hf_device_map"):
             weight_map = dict(named_module_tensors(model, recurse=True))
@@ -494,15 +558,21 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             disk_modules = set()
             index = None
             for name, module in model.named_modules():
-                if hasattr(module, "_hf_hook") and hasattr(module._hf_hook, "original_devices"):
+                if hasattr(module, "_hf_hook") and hasattr(
+                    module._hf_hook, "original_devices"
+                ):
                     if hasattr(module._hf_hook.weights_map, "dataset"):
                         index = module._hf_hook.weights_map.dataset.index
                     for key in module._hf_hook.original_devices.keys():
-                        if module._hf_hook.original_devices[key] == torch.device("meta"):
+                        if module._hf_hook.original_devices[key] == torch.device(
+                            "meta"
+                        ):
                             disk_modules.add(str(name) + "." + str(key))
 
             if disk_modules and not kwargs.get("use_safetensors", True):
-                raise ValueError("Disk offloading currently only supported for safetensors")
+                raise ValueError(
+                    "Disk offloading currently only supported for safetensors"
+                )
 
             if index:
                 offload_index = {
@@ -522,12 +592,16 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             remove_hook_from_submodules(model)
 
         if config.is_prompt_learning and is_trainable:
-            raise ValueError("Cannot set a prompt learning adapter to trainable when loading pretrained adapter.")
+            raise ValueError(
+                "Cannot set a prompt learning adapter to trainable when loading pretrained adapter."
+            )
         else:
             config.inference_mode = not is_trainable
         if isinstance(getattr(model, "base_model", None), XLoraModel):
             if not isinstance(config, XLoraConfig):
-                raise TypeError(f"Expected 'XLoraConfig', got '{type(config)}' instead.")
+                raise TypeError(
+                    f"Expected 'XLoraConfig', got '{type(config)}' instead."
+                )
             if "adapters" in kwargs:
                 config.adapters = kwargs["adapters"]
             else:
@@ -538,7 +612,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
                     # The names of the adapters which must be in folders
                     adapter_names = [
-                        file["name"][len(model_id) + 1 :] for file in s.ls(model_id) if file["type"] == "directory"
+                        file["name"][len(model_id) + 1 :]
+                        for file in s.ls(model_id)
+                        if file["type"] == "directory"
                     ]
                     # Prepare a dict of adapter paths, which really just point to the hf id; we will use the subfolders
                     adapter_paths = {}
@@ -548,17 +624,31 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                     config._subfolders = adapter_names
                 else:
                     if "adapters" not in kwargs:
-                        raise ValueError("If model_id is a local path, then `adapters` must be passed in kwargs.")
+                        raise ValueError(
+                            "If model_id is a local path, then `adapters` must be passed in kwargs."
+                        )
 
         if config.task_type not in MODEL_TYPE_TO_PEFT_MODEL_MAPPING.keys():
-            model = cls(model, config, adapter_name, autocast_adapter_dtype=autocast_adapter_dtype)
+            model = cls(
+                model,
+                config,
+                adapter_name,
+                autocast_adapter_dtype=autocast_adapter_dtype,
+            )
         else:
             model = MODEL_TYPE_TO_PEFT_MODEL_MAPPING[config.task_type](
-                model, config, adapter_name, autocast_adapter_dtype=autocast_adapter_dtype
+                model,
+                config,
+                adapter_name,
+                autocast_adapter_dtype=autocast_adapter_dtype,
             )
 
         model.load_adapter(
-            model_id, adapter_name, is_trainable=is_trainable, autocast_adapter_dtype=autocast_adapter_dtype, **kwargs
+            model_id,
+            adapter_name,
+            is_trainable=is_trainable,
+            autocast_adapter_dtype=autocast_adapter_dtype,
+            **kwargs,
         )
 
         return model
@@ -581,7 +671,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             transformer_backbone = self.base_model
 
         if config.num_transformer_submodules is None:
-            config.num_transformer_submodules = 2 if config.task_type == TaskType.SEQ_2_SEQ_LM else 1
+            config.num_transformer_submodules = (
+                2 if config.task_type == TaskType.SEQ_2_SEQ_LM else 1
+            )
 
         for named_param, value in list(transformer_backbone.named_parameters()):
             # for ZeRO-3, the tensor is sharded across accelerators and deepspeed modifies it to a tensor with shape [0]
@@ -593,9 +685,12 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
             if value.shape[0] == self.base_model.config.vocab_size or (
                 deepspeed_distributed_tensor_shape is not None
-                and deepspeed_distributed_tensor_shape[0] == self.base_model.config.vocab_size
+                and deepspeed_distributed_tensor_shape[0]
+                == self.base_model.config.vocab_size
             ):
-                self.word_embeddings = transformer_backbone.get_submodule(named_param.replace(".weight", ""))
+                self.word_embeddings = transformer_backbone.get_submodule(
+                    named_param.replace(".weight", "")
+                )
                 break
 
         if config.peft_type == PeftType.PROMPT_TUNING:
@@ -631,7 +726,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 def make_inputs_require_grad(module, input, output):
                     output.requires_grad_(True)
 
-                model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+                model.get_input_embeddings().register_forward_hook(
+                    make_inputs_require_grad
+                )
         return model
 
     def get_prompt_embedding_to_save(self, adapter_name: str) -> torch.Tensor:
@@ -641,19 +738,28 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         """
         prompt_encoder = self.prompt_encoder[adapter_name]
         prompt_tokens = (
-            self.prompt_tokens[adapter_name].unsqueeze(0).expand(1, -1).to(prompt_encoder.embedding.weight.device)
+            self.prompt_tokens[adapter_name]
+            .unsqueeze(0)
+            .expand(1, -1)
+            .to(prompt_encoder.embedding.weight.device)
         )
         if self.peft_config[adapter_name].peft_type == PeftType.PREFIX_TUNING:
-            prompt_tokens = prompt_tokens[:, : self.peft_config[adapter_name].num_virtual_tokens]
+            prompt_tokens = prompt_tokens[
+                :, : self.peft_config[adapter_name].num_virtual_tokens
+            ]
 
         if self.peft_config[adapter_name].peft_type == PeftType.MULTITASK_PROMPT_TUNING:
-            prompt_embeddings = super(MultitaskPromptEmbedding, prompt_encoder).forward(prompt_tokens)
+            prompt_embeddings = super(MultitaskPromptEmbedding, prompt_encoder).forward(
+                prompt_tokens
+            )
         else:
             prompt_embeddings = prompt_encoder(prompt_tokens)
 
         return prompt_embeddings[0].detach().cpu()
 
-    def get_prompt(self, batch_size: int, task_ids: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def get_prompt(
+        self, batch_size: int, task_ids: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Returns the virtual prompts to use for Peft. Only applicable when using a prompt learning method.
         """
@@ -668,7 +774,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         if peft_config.peft_type == PeftType.PREFIX_TUNING:
             prompt_tokens = prompt_tokens[:, : peft_config.num_virtual_tokens]
             if peft_config.inference_mode:
-                past_key_values = prompt_encoder.embedding.weight.repeat(batch_size, 1, 1)
+                past_key_values = prompt_encoder.embedding.weight.repeat(
+                    batch_size, 1, 1
+                )
             else:
                 past_key_values = prompt_encoder(prompt_tokens)
             if self.base_model_torch_dtype is not None:
@@ -685,8 +793,17 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             past_key_values = past_key_values.permute([2, 0, 3, 1, 4]).split(
                 peft_config.num_transformer_submodules * 2
             )
-            if TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING.get(self.config.model_type, None) is not None:
-                post_process_fn = TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING[self.config.model_type]
+            if (
+                TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING.get(
+                    self.config.model_type, None
+                )
+                is not None
+            ):
+                post_process_fn = (
+                    TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING[
+                        self.config.model_type
+                    ]
+                )
                 past_key_values = post_process_fn(past_key_values)
             return past_key_values
         else:
@@ -751,7 +868,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         try:
             return super().__getattr__(name)  # defer to nn.Module's logic
         except AttributeError:
-            if name == "base_model":  # see #1892: prevent infinite recursion if class is not initialized
+            if (
+                name == "base_model"
+            ):  # see #1892: prevent infinite recursion if class is not initialized
                 raise
             return getattr(self.base_model, name)
 
@@ -773,12 +892,20 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         Forward pass of the model.
         """
         with self._enable_peft_forward_hooks(*args, **kwargs):
-            kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+            kwargs = {
+                k: v
+                for k, v in kwargs.items()
+                if k not in self.special_peft_forward_args
+            }
             return self.get_base_model()(*args, **kwargs)
 
     def generate(self, *args, **kwargs):
         with self._enable_peft_forward_hooks(*args, **kwargs):
-            kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+            kwargs = {
+                k: v
+                for k, v in kwargs.items()
+                if k not in self.special_peft_forward_args
+            }
             return self.get_base_model().generate(*args, **kwargs)
 
     def _get_base_model_class(self, is_prompt_tuning=False):
@@ -808,7 +935,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 old_forward = self.forward
                 self.forward = self.base_model.forward
                 old_prepare_inputs_for_generation = self.prepare_inputs_for_generation
-                self.prepare_inputs_for_generation = self.base_model.prepare_inputs_for_generation
+                self.prepare_inputs_for_generation = (
+                    self.base_model.prepare_inputs_for_generation
+                )
                 yield
             finally:
                 self.forward = old_forward
@@ -843,7 +972,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         """
         return (
             self.base_model
-            if (self.active_peft_config.is_prompt_learning or self.peft_type == PeftType.POLY)
+            if (
+                self.active_peft_config.is_prompt_learning
+                or self.peft_type == PeftType.POLY
+            )
             else self.base_model.model
         )
 
@@ -898,7 +1030,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 self.modules_to_save = set(peft_config.modules_to_save)
             else:
                 self.modules_to_save.update(peft_config.modules_to_save)
-            _set_trainable(self, adapter_name)  # this may add a new ModulesToSaveWrapper
+            _set_trainable(
+                self, adapter_name
+            )  # this may add a new ModulesToSaveWrapper
 
     def get_layer_status(self) -> list[TunerLayerStatus]:
         """Get the status of each adapter layer in the model.
@@ -977,14 +1111,21 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         other_kwargs = {}
 
         for key, value in kwargs.items():
-            if key in inspect.signature(hf_hub_download).parameters or key in _kwargs_not_in_hf_hub_download_signature:
+            if (
+                key in inspect.signature(hf_hub_download).parameters
+                or key in _kwargs_not_in_hf_hub_download_signature
+            ):
                 hf_hub_download_kwargs[key] = value
             else:
                 other_kwargs[key] = value
 
         return hf_hub_download_kwargs, other_kwargs
 
-    def _update_offload(self, offload_index: dict[str, dict[str, str]], adapters_weights: dict[str, torch.tensor]):
+    def _update_offload(
+        self,
+        offload_index: dict[str, dict[str, str]],
+        adapters_weights: dict[str, torch.tensor],
+    ):
         """
         Update the offload_index and safetensors files for loading and mergine PeftModels with disk-offloaded modules.
 
@@ -1011,7 +1152,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 extended_prefix = prefix + key[:suffix_pos]
                 module = dict(self.named_modules())[extended_prefix]
                 if isinstance(module, BaseTunerLayer):
-                    new_key = prefix + key[:suffix_pos] + ".base_layer" + key[suffix_pos:]
+                    new_key = (
+                        prefix + key[:suffix_pos] + ".base_layer" + key[suffix_pos:]
+                    )
                 else:
                     new_key = prefix + key
                 offload_index[key]["weight_name"] = new_key
@@ -1042,13 +1185,23 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                         extended_prefix = prefix + block_id + safe_key[:suffix_pos]
                         safe_module = dict(self.named_modules())[extended_prefix]
                         if isinstance(safe_module, BaseTunerLayer):
-                            final_key = extended_prefix + ".base_layer" + safe_key[suffix_pos:]
-                            lora_dict = {key: val for key, val in adapters_weights.items() if extended_prefix in key}
+                            final_key = (
+                                extended_prefix + ".base_layer" + safe_key[suffix_pos:]
+                            )
+                            lora_dict = {
+                                key: val
+                                for key, val in adapters_weights.items()
+                                if extended_prefix in key
+                            }
 
                             # add LoRA keys and values to disk offload
                             for lora_key, lora_val in lora_dict.items():
                                 divide = lora_key.rfind(".")
-                                new_key = lora_key[:divide] + f".{adapter_name}" + lora_key[divide:]
+                                new_key = (
+                                    lora_key[:divide]
+                                    + f".{adapter_name}"
+                                    + lora_key[divide:]
+                                )
                                 safe_dict[new_key] = lora_val
                         else:
                             final_key = prefix + block_id + safe_key
@@ -1057,7 +1210,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
                     # avoid overwriting original safetensors
                     for key in safe_dict.keys():
-                        offload_index[key] = {"safetensors_file": new_fname, "weight_name": key}
+                        offload_index[key] = {
+                            "safetensors_file": new_fname,
+                            "weight_name": key,
+                        }
 
                     base_name = os.path.dirname(new_fname)
                     if not os.path.exists(base_name):
@@ -1120,21 +1276,30 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 **hf_hub_download_kwargs,
             )
             if peft_config.is_prompt_learning and is_trainable:
-                raise ValueError("Cannot set a prompt learning adapter to trainable when loading pretrained adapter.")
+                raise ValueError(
+                    "Cannot set a prompt learning adapter to trainable when loading pretrained adapter."
+                )
             else:
                 peft_config.inference_mode = not is_trainable
             self.add_adapter(adapter_name, peft_config)
 
-        adapters_weights = load_peft_weights(model_id, device=torch_device, **hf_hub_download_kwargs)
+        adapters_weights = load_peft_weights(
+            model_id, device=torch_device, **hf_hub_download_kwargs
+        )
 
         # load the weights into the model
         ignore_mismatched_sizes = kwargs.get("ignore_mismatched_sizes", False)
         load_result = set_peft_model_state_dict(
-            self, adapters_weights, adapter_name=adapter_name, ignore_mismatched_sizes=ignore_mismatched_sizes
+            self,
+            adapters_weights,
+            adapter_name=adapter_name,
+            ignore_mismatched_sizes=ignore_mismatched_sizes,
         )
         if (
             (getattr(self, "hf_device_map", None) is not None)
-            and (len(set(self.hf_device_map.values()).intersection({"cpu", "disk"})) > 0)
+            and (
+                len(set(self.hf_device_map.values()).intersection({"cpu", "disk"})) > 0
+            )
             and len(self.peft_config) == 1
         ):
             device_map = kwargs.get("device_map", "auto")
@@ -1160,7 +1325,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
             if isinstance(device_map, str):
                 device_map = infer_auto_device_map(
-                    self, max_memory=max_memory, no_split_module_classes=no_split_module_classes
+                    self,
+                    max_memory=max_memory,
+                    no_split_module_classes=no_split_module_classes,
                 )
 
             self._update_offload(offload_index, adapters_weights)
@@ -1233,7 +1400,11 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
         filename = os.path.join(output_dir, "README.md")
 
-        card = ModelCard.load(filename) if os.path.exists(filename) else ModelCard.from_template(ModelCardData())
+        card = (
+            ModelCard.load(filename)
+            if os.path.exists(filename)
+            else ModelCard.from_template(ModelCardData())
+        )
 
         card.data["library_name"] = "peft"
 
@@ -1249,17 +1420,23 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         if hasattr(model_config, "quantization_config"):
             quantization_config = self.config.quantization_config.to_dict()
         training_config_text = ""
-        quantization_prefix = "The following `bitsandbytes` quantization config was used during training:"
+        quantization_prefix = (
+            "The following `bitsandbytes` quantization config was used during training:"
+        )
         # Adds quantization information if it was used
         if quantization_config is not None:
             training_config_text += f"\n{quantization_prefix}\n"
-            training_config_text += "\n".join([f"- {name}: {value}" for name, value in quantization_config.items()])
+            training_config_text += "\n".join(
+                [f"- {name}: {value}" for name, value in quantization_config.items()]
+            )
             training_config_text += "\n"
 
         training_procedure_heading = "## Training procedure"
         if quantization_prefix not in lines and bool(training_config_text):
             if training_procedure_heading in lines:
-                lines.insert(lines.index(training_procedure_heading) + 2, training_config_text)
+                lines.insert(
+                    lines.index(training_procedure_heading) + 2, training_config_text
+                )
             else:
                 lines.append(f"{training_procedure_heading}\n{training_config_text}")
 
@@ -1267,7 +1444,9 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         framework_block_heading = "### Framework versions"
         if f"- PEFT {__version__}" not in lines:
             if framework_block_heading in lines:
-                lines.insert(lines.index(framework_block_heading) + 2, f"- PEFT {__version__}")
+                lines.insert(
+                    lines.index(framework_block_heading) + 2, f"- PEFT {__version__}"
+                )
             else:
                 lines.append(f"{framework_block_heading}\n\n- PEFT {__version__}")
 
@@ -1321,7 +1500,11 @@ class PeftModelForSequenceClassification(PeftModel):
     """
 
     def __init__(
-        self, model: torch.nn.Module, peft_config: PeftConfig, adapter_name: str = "default", **kwargs
+        self,
+        model: torch.nn.Module,
+        peft_config: PeftConfig,
+        adapter_name: str = "default",
+        **kwargs,
     ) -> None:
         super().__init__(model, peft_config, adapter_name, **kwargs)
 
@@ -1384,11 +1567,17 @@ class PeftModelForSequenceClassification(PeftModel):
         task_ids=None,
         **kwargs,
     ):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
         peft_config = self.active_peft_config
         if not peft_config.is_prompt_learning:
             with self._enable_peft_forward_hooks(**kwargs):
-                kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+                kwargs = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k not in self.special_peft_forward_args
+                }
                 if peft_config.peft_type == PeftType.POLY:
                     kwargs["task_ids"] = task_ids
                 return self.base_model(
@@ -1405,10 +1594,14 @@ class PeftModelForSequenceClassification(PeftModel):
         batch_size = _get_batch_size(input_ids, inputs_embeds)
         if attention_mask is not None:
             # concat prompt attention mask
-            prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(attention_mask.device)
+            prefix_attention_mask = torch.ones(
+                batch_size, peft_config.num_virtual_tokens
+            ).to(attention_mask.device)
             attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
         if kwargs.get("position_ids", None) is not None:
-            warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
+            warnings.warn(
+                "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
+            )
             kwargs["position_ids"] = None
         kwargs.update(
             {
@@ -1426,7 +1619,9 @@ class PeftModelForSequenceClassification(PeftModel):
             if kwargs.get("token_type_ids", None) is not None:
                 kwargs["token_type_ids"] = torch.cat(
                     (
-                        torch.zeros(batch_size, peft_config.num_virtual_tokens).to(self.word_embeddings.weight.device),
+                        torch.zeros(batch_size, peft_config.num_virtual_tokens).to(
+                            self.word_embeddings.weight.device
+                        ),
                         kwargs["token_type_ids"],
                     ),
                     dim=1,
@@ -1466,13 +1661,21 @@ class PeftModelForSequenceClassification(PeftModel):
         if "past_key_values" in fwd_params:
             return self.base_model(labels=labels, **kwargs)
         else:
-            transformer_backbone_name = self.base_model.get_submodule(self.transformer_backbone_name)
-            fwd_params = list(inspect.signature(transformer_backbone_name.forward).parameters.keys())
+            transformer_backbone_name = self.base_model.get_submodule(
+                self.transformer_backbone_name
+            )
+            fwd_params = list(
+                inspect.signature(transformer_backbone_name.forward).parameters.keys()
+            )
             if "past_key_values" not in fwd_params:
-                raise ValueError("Model does not support past key values which are required for prefix tuning.")
+                raise ValueError(
+                    "Model does not support past key values which are required for prefix tuning."
+                )
             outputs = transformer_backbone_name(**kwargs)
             pooled_output = outputs[1] if len(outputs) > 1 else outputs[0]
-            if "dropout" in [name for name, _ in list(self.base_model.named_children())]:
+            if "dropout" in [
+                name for name, _ in list(self.base_model.named_children())
+            ]:
                 pooled_output = self.base_model.dropout(pooled_output)
             logits = self.base_model.get_submodule(self.cls_layer_name)(pooled_output)
 
@@ -1481,7 +1684,9 @@ class PeftModelForSequenceClassification(PeftModel):
                 if self.config.problem_type is None:
                     if self.base_model.num_labels == 1:
                         self.config.problem_type = "regression"
-                    elif self.base_model.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    elif self.base_model.num_labels > 1 and (
+                        labels.dtype == torch.long or labels.dtype == torch.int
+                    ):
                         self.config.problem_type = "single_label_classification"
                     else:
                         self.config.problem_type = "multi_label_classification"
@@ -1494,7 +1699,9 @@ class PeftModelForSequenceClassification(PeftModel):
                         loss = loss_fct(logits, labels)
                 elif self.config.problem_type == "single_label_classification":
                     loss_fct = CrossEntropyLoss()
-                    loss = loss_fct(logits.view(-1, self.base_model.num_labels), labels.view(-1))
+                    loss = loss_fct(
+                        logits.view(-1, self.base_model.num_labels), labels.view(-1)
+                    )
                 elif self.config.problem_type == "multi_label_classification":
                     loss_fct = BCEWithLogitsLoss()
                     loss = loss_fct(logits, labels)
@@ -1552,10 +1759,16 @@ class PeftModelForCausalLM(PeftModel):
     """
 
     def __init__(
-        self, model: torch.nn.Module, peft_config: PeftConfig, adapter_name: str = "default", **kwargs
+        self,
+        model: torch.nn.Module,
+        peft_config: PeftConfig,
+        adapter_name: str = "default",
+        **kwargs,
     ) -> None:
         super().__init__(model, peft_config, adapter_name, **kwargs)
-        self.base_model_prepare_inputs_for_generation = self.base_model.prepare_inputs_for_generation
+        self.base_model_prepare_inputs_for_generation = (
+            self.base_model.prepare_inputs_for_generation
+        )
 
     def forward(
         self,
@@ -1573,7 +1786,9 @@ class PeftModelForCausalLM(PeftModel):
         if not peft_config.is_prompt_learning:
             if self.base_model.config.model_type == "mpt":
                 if inputs_embeds is not None:
-                    raise AssertionError("forward in MPTForCausalLM does not support inputs_embeds")
+                    raise AssertionError(
+                        "forward in MPTForCausalLM does not support inputs_embeds"
+                    )
                 return self.base_model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
@@ -1588,7 +1803,11 @@ class PeftModelForCausalLM(PeftModel):
                 kwargs["task_ids"] = task_ids
 
             with self._enable_peft_forward_hooks(**kwargs):
-                kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+                kwargs = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k not in self.special_peft_forward_args
+                }
                 return self.base_model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
@@ -1603,14 +1822,20 @@ class PeftModelForCausalLM(PeftModel):
         batch_size = _get_batch_size(input_ids, inputs_embeds)
         if attention_mask is not None:
             # concat prompt attention mask
-            prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(attention_mask.device)
+            prefix_attention_mask = torch.ones(
+                batch_size, peft_config.num_virtual_tokens
+            ).to(attention_mask.device)
             attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
 
         if kwargs.get("position_ids", None) is not None:
-            warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
+            warnings.warn(
+                "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
+            )
             kwargs["position_ids"] = None
         if kwargs.get("token_type_ids", None) is not None:
-            warnings.warn("Token type ids are not supported for parameter efficient tuning. Ignoring token type ids")
+            warnings.warn(
+                "Token type ids are not supported for parameter efficient tuning. Ignoring token type ids"
+            )
             kwargs["token_type_ids"] = None
         kwargs.update(
             {
@@ -1625,13 +1850,17 @@ class PeftModelForCausalLM(PeftModel):
         if peft_config.peft_type == PeftType.PREFIX_TUNING:
             # overwrite past_kv in kwargs
             kwargs["past_key_values"] = self.get_prompt(batch_size)
-            return self.base_model(input_ids=input_ids, inputs_embeds=inputs_embeds, **kwargs)
+            return self.base_model(
+                input_ids=input_ids, inputs_embeds=inputs_embeds, **kwargs
+            )
         else:
             if inputs_embeds is None:
                 inputs_embeds = self.word_embeddings(input_ids)
             # concat prompt labels
             if labels is not None:
-                prefix_labels = torch.full((batch_size, peft_config.num_virtual_tokens), -100).to(labels.device)
+                prefix_labels = torch.full(
+                    (batch_size, peft_config.num_virtual_tokens), -100
+                ).to(labels.device)
                 kwargs["labels"] = torch.cat((prefix_labels, labels), dim=1)
             prompts = self.get_prompt(batch_size=batch_size, task_ids=task_ids)
             prompts = prompts.to(inputs_embeds.dtype)
@@ -1640,7 +1869,9 @@ class PeftModelForCausalLM(PeftModel):
 
     def generate(self, *args, **kwargs):
         peft_config = self.active_peft_config
-        self.base_model.prepare_inputs_for_generation = self.prepare_inputs_for_generation
+        self.base_model.prepare_inputs_for_generation = (
+            self.prepare_inputs_for_generation
+        )
         if hasattr(self.base_model, "model"):
             self.base_model.model.generation_config = self.generation_config
         else:
@@ -1648,33 +1879,50 @@ class PeftModelForCausalLM(PeftModel):
         try:
             if not peft_config.is_prompt_learning:
                 with self._enable_peft_forward_hooks(*args, **kwargs):
-                    kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+                    kwargs = {
+                        k: v
+                        for k, v in kwargs.items()
+                        if k not in self.special_peft_forward_args
+                    }
                     outputs = self.base_model.generate(*args, **kwargs)
             else:
                 outputs = self.base_model.generate(**kwargs)
         except:
-            self.base_model.prepare_inputs_for_generation = self.base_model_prepare_inputs_for_generation
+            self.base_model.prepare_inputs_for_generation = (
+                self.base_model_prepare_inputs_for_generation
+            )
             raise
         else:
-            self.base_model.prepare_inputs_for_generation = self.base_model_prepare_inputs_for_generation
+            self.base_model.prepare_inputs_for_generation = (
+                self.base_model_prepare_inputs_for_generation
+            )
             return outputs
 
-    def prepare_inputs_for_generation(self, *args, task_ids: Optional[torch.Tensor] = None, **kwargs):
+    def prepare_inputs_for_generation(
+        self, *args, task_ids: Optional[torch.Tensor] = None, **kwargs
+    ):
         peft_config = self.active_peft_config
         model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
 
         # https://github.com/huggingface/transformers/pull/26681/ introduced new cache format
         # for some architectures which requires a special fix for prompt tuning etc.
         # TODO: starting with transformers 4.38, all architectures should support caching.
-        uses_transformers_4_38 = packaging.version.parse(transformers.__version__) >= packaging.version.parse("4.38.0")
-        uses_transformers_4_36 = packaging.version.parse(transformers.__version__) >= packaging.version.parse("4.36.0")
+        uses_transformers_4_38 = packaging.version.parse(
+            transformers.__version__
+        ) >= packaging.version.parse("4.38.0")
+        uses_transformers_4_36 = packaging.version.parse(
+            transformers.__version__
+        ) >= packaging.version.parse("4.36.0")
         transformers_new_cache_archs = ["llama", "mistral", "persimmon", "phi"]
-        if packaging.version.parse(transformers.__version__) > packaging.version.parse("4.43.3"):
+        if packaging.version.parse(transformers.__version__) > packaging.version.parse(
+            "4.43.3"
+        ):
             # https://github.com/huggingface/transformers/pull/31445
             transformers_new_cache_archs.append("bloom")
 
         uses_cache = uses_transformers_4_38 or (
-            uses_transformers_4_36 and self.base_model.config.model_type in transformers_new_cache_archs
+            uses_transformers_4_36
+            and self.base_model.config.model_type in transformers_new_cache_archs
         )
 
         if peft_config.peft_type == PeftType.POLY:
@@ -1693,14 +1941,21 @@ class PeftModelForCausalLM(PeftModel):
                     model_kwargs["input_ids"] = model_kwargs["input_ids"][:, -1:]
 
             if model_kwargs.get("attention_mask", None) is not None:
-                size = model_kwargs["input_ids"].shape[0], peft_config.num_virtual_tokens
-                prefix_attention_mask = torch.ones(size).to(model_kwargs["input_ids"].device)
+                size = (
+                    model_kwargs["input_ids"].shape[0],
+                    peft_config.num_virtual_tokens,
+                )
+                prefix_attention_mask = torch.ones(size).to(
+                    model_kwargs["input_ids"].device
+                )
                 model_kwargs["attention_mask"] = torch.cat(
                     (prefix_attention_mask, model_kwargs["attention_mask"]), dim=1
                 )
 
             if model_kwargs.get("position_ids", None) is not None:
-                warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
+                warnings.warn(
+                    "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
+                )
                 model_kwargs["position_ids"] = None
 
             if kwargs.get("token_type_ids", None) is not None:
@@ -1711,17 +1966,27 @@ class PeftModelForCausalLM(PeftModel):
 
             # no past_key_values or past_key_values empty cache
             requires_prompt_injection = (model_kwargs["past_key_values"] is None) or (
-                isinstance(model_kwargs["past_key_values"], transformers.Cache) and not model_kwargs["past_key_values"]
+                isinstance(model_kwargs["past_key_values"], transformers.Cache)
+                and not model_kwargs["past_key_values"]
             )
 
-            if requires_prompt_injection and peft_config.peft_type == PeftType.PREFIX_TUNING:
-                new_past_key_values = self.get_prompt(batch_size=model_kwargs["input_ids"].shape[0])
+            if (
+                requires_prompt_injection
+                and peft_config.peft_type == PeftType.PREFIX_TUNING
+            ):
+                new_past_key_values = self.get_prompt(
+                    batch_size=model_kwargs["input_ids"].shape[0]
+                )
                 model_kwargs["past_key_values"] = new_past_key_values
             elif requires_prompt_injection:
                 inputs_embeds = self.word_embeddings(model_kwargs["input_ids"])
-                prompts = self.get_prompt(batch_size=model_kwargs["input_ids"].shape[0], task_ids=task_ids)
+                prompts = self.get_prompt(
+                    batch_size=model_kwargs["input_ids"].shape[0], task_ids=task_ids
+                )
                 prompts = prompts.to(inputs_embeds.dtype)
-                model_kwargs["inputs_embeds"] = torch.cat((prompts, inputs_embeds), dim=1)
+                model_kwargs["inputs_embeds"] = torch.cat(
+                    (prompts, inputs_embeds), dim=1
+                )
                 model_kwargs["input_ids"] = None
 
         # For transformers>=4.38.0 - for some architectures such as Llama, `cache_position` is
@@ -1774,10 +2039,16 @@ class PeftModelForSeq2SeqLM(PeftModel):
     """
 
     def __init__(
-        self, model: torch.nn.Module, peft_config: PeftConfig, adapter_name: str = "default", **kwargs
+        self,
+        model: torch.nn.Module,
+        peft_config: PeftConfig,
+        adapter_name: str = "default",
+        **kwargs,
     ) -> None:
         super().__init__(model, peft_config, adapter_name, **kwargs)
-        self.base_model_prepare_inputs_for_generation = self.base_model.prepare_inputs_for_generation
+        self.base_model_prepare_inputs_for_generation = (
+            self.base_model.prepare_inputs_for_generation
+        )
         self.base_model_prepare_encoder_decoder_kwargs_for_generation = (
             self.base_model._prepare_encoder_decoder_kwargs_for_generation
         )
@@ -1803,7 +2074,11 @@ class PeftModelForSeq2SeqLM(PeftModel):
                 kwargs["task_ids"] = task_ids
 
             with self._enable_peft_forward_hooks(**kwargs):
-                kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+                kwargs = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k not in self.special_peft_forward_args
+                }
                 return self.base_model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
@@ -1821,17 +2096,23 @@ class PeftModelForSeq2SeqLM(PeftModel):
         batch_size = _get_batch_size(input_ids, inputs_embeds)
         if decoder_attention_mask is not None:
             # concat prompt attention mask
-            prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(
-                decoder_attention_mask.device
-            )
+            prefix_attention_mask = torch.ones(
+                batch_size, peft_config.num_virtual_tokens
+            ).to(decoder_attention_mask.device)
             if peft_config.peft_type not in [PeftType.PROMPT_TUNING, PeftType.P_TUNING]:
-                decoder_attention_mask = torch.cat((prefix_attention_mask, decoder_attention_mask), dim=1)
+                decoder_attention_mask = torch.cat(
+                    (prefix_attention_mask, decoder_attention_mask), dim=1
+                )
 
         if kwargs.get("position_ids", None) is not None:
-            warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
+            warnings.warn(
+                "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
+            )
             kwargs["position_ids"] = None
         if kwargs.get("token_type_ids", None) is not None:
-            warnings.warn("Token type ids are not supported for parameter efficient tuning. Ignoring token type ids")
+            warnings.warn(
+                "Token type ids are not supported for parameter efficient tuning. Ignoring token type ids"
+            )
             kwargs["token_type_ids"] = None
         kwargs.update(
             {
@@ -1859,14 +2140,18 @@ class PeftModelForSeq2SeqLM(PeftModel):
 
             if attention_mask is not None:
                 # concat prompt attention mask
-                prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(
-                    attention_mask.device
+                prefix_attention_mask = torch.ones(
+                    batch_size, peft_config.num_virtual_tokens
+                ).to(attention_mask.device)
+                kwargs["attention_mask"] = torch.cat(
+                    (prefix_attention_mask, attention_mask), dim=1
                 )
-                kwargs["attention_mask"] = torch.cat((prefix_attention_mask, attention_mask), dim=1)
 
             prompts = self.get_prompt(batch_size=batch_size)
             prompts = prompts.to(inputs_embeds.dtype)
-            inputs_embeds = torch.cat((prompts[:, : peft_config.num_virtual_tokens], inputs_embeds), dim=1)
+            inputs_embeds = torch.cat(
+                (prompts[:, : peft_config.num_virtual_tokens], inputs_embeds), dim=1
+            )
 
             return self.base_model(
                 inputs_embeds=inputs_embeds,
@@ -1885,44 +2170,64 @@ class PeftModelForSeq2SeqLM(PeftModel):
 
             if attention_mask is not None:
                 # concat prompt attention mask
-                prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(
-                    attention_mask.device
+                prefix_attention_mask = torch.ones(
+                    batch_size, peft_config.num_virtual_tokens
+                ).to(attention_mask.device)
+                kwargs["attention_mask"] = torch.cat(
+                    (prefix_attention_mask, attention_mask), dim=1
                 )
-                kwargs["attention_mask"] = torch.cat((prefix_attention_mask, attention_mask), dim=1)
             # concat prompt labels
             if labels is not None:
                 if peft_config.num_transformer_submodules == 1:
                     kwargs["labels"] = labels
                 elif peft_config.num_transformer_submodules == 2:
-                    prefix_labels = torch.full((batch_size, peft_config.num_virtual_tokens), -100).to(labels.device)
+                    prefix_labels = torch.full(
+                        (batch_size, peft_config.num_virtual_tokens), -100
+                    ).to(labels.device)
                     kwargs["labels"] = torch.cat((prefix_labels, labels), dim=1)
             prompts = self.get_prompt(batch_size=batch_size, task_ids=task_ids)
             prompts = prompts.to(inputs_embeds.dtype)
-            inputs_embeds = torch.cat((prompts[:, : peft_config.num_virtual_tokens], inputs_embeds), dim=1)
+            inputs_embeds = torch.cat(
+                (prompts[:, : peft_config.num_virtual_tokens], inputs_embeds), dim=1
+            )
             if peft_config.num_transformer_submodules == 1:
                 return self.base_model(inputs_embeds=inputs_embeds, **kwargs)
             elif peft_config.num_transformer_submodules == 2:
                 decoder_inputs_embeds = torch.cat(
-                    (prompts[:, peft_config.num_virtual_tokens :], decoder_inputs_embeds), dim=1
+                    (
+                        prompts[:, peft_config.num_virtual_tokens :],
+                        decoder_inputs_embeds,
+                    ),
+                    dim=1,
                 )
                 return self.base_model(
-                    inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds, **kwargs
+                    inputs_embeds=inputs_embeds,
+                    decoder_inputs_embeds=decoder_inputs_embeds,
+                    **kwargs,
                 )
 
     def generate(self, **kwargs):
         peft_config = self.active_peft_config
-        self.base_model.prepare_inputs_for_generation = self.prepare_inputs_for_generation
+        self.base_model.prepare_inputs_for_generation = (
+            self.prepare_inputs_for_generation
+        )
         self.base_model._prepare_encoder_decoder_kwargs_for_generation = (
             self._prepare_encoder_decoder_kwargs_for_generation
         )
         try:
             if not peft_config.is_prompt_learning:
                 with self._enable_peft_forward_hooks(**kwargs):
-                    kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+                    kwargs = {
+                        k: v
+                        for k, v in kwargs.items()
+                        if k not in self.special_peft_forward_args
+                    }
                     outputs = self.base_model.generate(**kwargs)
             else:
                 if "input_ids" not in kwargs:
-                    raise ValueError("input_ids must be provided for Peft model generation")
+                    raise ValueError(
+                        "input_ids must be provided for Peft model generation"
+                    )
                 if kwargs.get("position_ids", None) is not None:
                     warnings.warn(
                         "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
@@ -1952,40 +2257,56 @@ class PeftModelForSeq2SeqLM(PeftModel):
                     input_ids = kwargs.pop("input_ids")
                     inputs_embeds = self.word_embeddings(input_ids)
                     batch_size = inputs_embeds.shape[0]
-                    prompts = self.get_prompt(batch_size=batch_size, task_ids=kwargs.pop("task_ids", None))
+                    prompts = self.get_prompt(
+                        batch_size=batch_size, task_ids=kwargs.pop("task_ids", None)
+                    )
                     prompts = prompts.to(inputs_embeds.dtype)
 
-                    inputs_embeds = torch.cat((prompts[:, : peft_config.num_virtual_tokens], inputs_embeds), dim=1)
+                    inputs_embeds = torch.cat(
+                        (prompts[:, : peft_config.num_virtual_tokens], inputs_embeds),
+                        dim=1,
+                    )
                     kwargs["inputs_embeds"] = inputs_embeds
 
                     if "attention_mask" in kwargs:
-                        prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(
-                            kwargs["attention_mask"].device
+                        prefix_attention_mask = torch.ones(
+                            batch_size, peft_config.num_virtual_tokens
+                        ).to(kwargs["attention_mask"].device)
+                        kwargs["attention_mask"] = torch.cat(
+                            (prefix_attention_mask, kwargs["attention_mask"]), dim=1
                         )
-                        kwargs["attention_mask"] = torch.cat((prefix_attention_mask, kwargs["attention_mask"]), dim=1)
 
                     return self.base_model.generate(**kwargs)
                 else:
                     raise NotImplementedError
         except:
-            self.base_model.prepare_inputs_for_generation = self.base_model_prepare_inputs_for_generation
+            self.base_model.prepare_inputs_for_generation = (
+                self.base_model_prepare_inputs_for_generation
+            )
             self.base_model._prepare_encoder_decoder_kwargs_for_generation = (
                 self.base_model_prepare_encoder_decoder_kwargs_for_generation
             )
             raise
         else:
-            self.base_model.prepare_inputs_for_generation = self.base_model_prepare_inputs_for_generation
+            self.base_model.prepare_inputs_for_generation = (
+                self.base_model_prepare_inputs_for_generation
+            )
             self.base_model._prepare_encoder_decoder_kwargs_for_generation = (
                 self.base_model_prepare_encoder_decoder_kwargs_for_generation
             )
             return outputs
 
-    def prepare_inputs_for_generation(self, *args, task_ids: torch.Tensor = None, **kwargs):
+    def prepare_inputs_for_generation(
+        self, *args, task_ids: torch.Tensor = None, **kwargs
+    ):
         peft_config = self.active_peft_config
         model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
         if peft_config.peft_type == PeftType.POLY:
             model_kwargs["task_ids"] = task_ids
-        if model_kwargs["past_key_values"] is None and peft_config.peft_type == PeftType.PREFIX_TUNING:
+        if (
+            model_kwargs["past_key_values"] is None
+            and peft_config.peft_type == PeftType.PREFIX_TUNING
+        ):
             batch_size = model_kwargs["decoder_input_ids"].shape[0]
             past_key_values = self.get_prompt(batch_size)
             model_kwargs["past_key_values"] = past_key_values
@@ -2039,7 +2360,11 @@ class PeftModelForTokenClassification(PeftModel):
     """
 
     def __init__(
-        self, model: torch.nn.Module, peft_config: PeftConfig = None, adapter_name: str = "default", **kwargs
+        self,
+        model: torch.nn.Module,
+        peft_config: PeftConfig = None,
+        adapter_name: str = "default",
+        **kwargs,
     ) -> None:
         super().__init__(model, peft_config, adapter_name, **kwargs)
 
@@ -2103,11 +2428,17 @@ class PeftModelForTokenClassification(PeftModel):
         **kwargs,
     ):
         peft_config = self.active_peft_config
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         if not peft_config.is_prompt_learning:
             with self._enable_peft_forward_hooks(**kwargs):
-                kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+                kwargs = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k not in self.special_peft_forward_args
+                }
                 if peft_config.peft_type == PeftType.POLY:
                     kwargs["task_ids"] = task_ids
                 return self.base_model(
@@ -2124,10 +2455,14 @@ class PeftModelForTokenClassification(PeftModel):
         batch_size = _get_batch_size(input_ids, inputs_embeds)
         if attention_mask is not None:
             # concat prompt attention mask
-            prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(attention_mask.device)
+            prefix_attention_mask = torch.ones(
+                batch_size, peft_config.num_virtual_tokens
+            ).to(attention_mask.device)
             attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
         if kwargs.get("position_ids", None) is not None:
-            warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
+            warnings.warn(
+                "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
+            )
             kwargs["position_ids"] = None
         kwargs.update(
             {
@@ -2145,7 +2480,9 @@ class PeftModelForTokenClassification(PeftModel):
             if kwargs.get("token_type_ids", None) is not None:
                 kwargs["token_type_ids"] = torch.cat(
                     (
-                        torch.zeros(batch_size, peft_config.num_virtual_tokens).to(self.word_embeddings.weight.device),
+                        torch.zeros(batch_size, peft_config.num_virtual_tokens).to(
+                            self.word_embeddings.weight.device
+                        ),
                         kwargs["token_type_ids"],
                     ),
                     dim=1,
@@ -2185,13 +2522,21 @@ class PeftModelForTokenClassification(PeftModel):
         if "past_key_values" in fwd_params:
             return self.base_model(labels=labels, **kwargs)
         else:
-            transformer_backbone_name = self.base_model.get_submodule(self.transformer_backbone_name)
-            fwd_params = list(inspect.signature(transformer_backbone_name.forward).parameters.keys())
+            transformer_backbone_name = self.base_model.get_submodule(
+                self.transformer_backbone_name
+            )
+            fwd_params = list(
+                inspect.signature(transformer_backbone_name.forward).parameters.keys()
+            )
             if "past_key_values" not in fwd_params:
-                raise ValueError("Model does not support past key values which are required for prefix tuning.")
+                raise ValueError(
+                    "Model does not support past key values which are required for prefix tuning."
+                )
             outputs = transformer_backbone_name(**kwargs)
             sequence_output = outputs[0]
-            if "dropout" in [name for name, _ in list(self.base_model.named_children())]:
+            if "dropout" in [
+                name for name, _ in list(self.base_model.named_children())
+            ]:
                 sequence_output = self.base_model.dropout(sequence_output)
             logits = self.base_model.get_submodule(self.cls_layer_name)(sequence_output)
 
@@ -2256,7 +2601,11 @@ class PeftModelForQuestionAnswering(PeftModel):
     """
 
     def __init__(
-        self, model: torch.nn.Module, peft_config: PeftConfig, adapter_name: str = "default", **kwargs
+        self,
+        model: torch.nn.Module,
+        peft_config: PeftConfig,
+        adapter_name: str = "default",
+        **kwargs,
     ) -> None:
         super().__init__(model, peft_config, adapter_name, **kwargs)
 
@@ -2323,14 +2672,20 @@ class PeftModelForQuestionAnswering(PeftModel):
         **kwargs,
     ):
         peft_config = self.active_peft_config
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         if not peft_config.is_prompt_learning:
             if peft_config.peft_type == PeftType.POLY:
                 kwargs["task_ids"] = task_ids
 
             with self._enable_peft_forward_hooks(**kwargs):
-                kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+                kwargs = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k not in self.special_peft_forward_args
+                }
                 return self.base_model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
@@ -2346,10 +2701,14 @@ class PeftModelForQuestionAnswering(PeftModel):
         batch_size = _get_batch_size(input_ids, inputs_embeds)
         if attention_mask is not None:
             # concat prompt attention mask
-            prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(attention_mask.device)
+            prefix_attention_mask = torch.ones(
+                batch_size, peft_config.num_virtual_tokens
+            ).to(attention_mask.device)
             attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
         if kwargs.get("position_ids", None) is not None:
-            warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
+            warnings.warn(
+                "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
+            )
             kwargs["position_ids"] = None
         kwargs.update(
             {
@@ -2368,7 +2727,9 @@ class PeftModelForQuestionAnswering(PeftModel):
             if kwargs.get("token_type_ids", None) is not None:
                 kwargs["token_type_ids"] = torch.cat(
                     (
-                        torch.zeros(batch_size, peft_config.num_virtual_tokens).to(self.word_embeddings.weight.device),
+                        torch.zeros(batch_size, peft_config.num_virtual_tokens).to(
+                            self.word_embeddings.weight.device
+                        ),
                         kwargs["token_type_ids"],
                     ),
                     dim=1,
@@ -2407,15 +2768,25 @@ class PeftModelForQuestionAnswering(PeftModel):
             }
         )
         if "past_key_values" in fwd_params:
-            return self.base_model(start_positions=start_positions, end_positions=end_positions, **kwargs)
+            return self.base_model(
+                start_positions=start_positions, end_positions=end_positions, **kwargs
+            )
         else:
-            transformer_backbone_name = self.base_model.get_submodule(self.transformer_backbone_name)
-            fwd_params = list(inspect.signature(transformer_backbone_name.forward).parameters.keys())
+            transformer_backbone_name = self.base_model.get_submodule(
+                self.transformer_backbone_name
+            )
+            fwd_params = list(
+                inspect.signature(transformer_backbone_name.forward).parameters.keys()
+            )
             if "past_key_values" not in fwd_params:
-                raise ValueError("Model does not support past key values which are required for prefix tuning.")
+                raise ValueError(
+                    "Model does not support past key values which are required for prefix tuning."
+                )
             outputs = transformer_backbone_name(**kwargs)
             sequence_output = outputs[0]
-            if "dropout" in [name for name, _ in list(self.base_model.named_children())]:
+            if "dropout" in [
+                name for name, _ in list(self.base_model.named_children())
+            ]:
                 sequence_output = self.base_model.dropout(sequence_output)
             logits = self.base_model.get_submodule(self.cls_layer_name)(sequence_output)
             start_logits, end_logits = logits.split(1, dim=-1)
@@ -2492,7 +2863,13 @@ class PeftModelForFeatureExtraction(PeftModel):
         ```
     """
 
-    def __init__(self, model: torch.nn.Module, peft_config: PeftConfig, adapter_name: str = "default", **kwargs):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        peft_config: PeftConfig,
+        adapter_name: str = "default",
+        **kwargs,
+    ):
         super().__init__(model, peft_config, adapter_name, **kwargs)
 
     def forward(
@@ -2512,7 +2889,11 @@ class PeftModelForFeatureExtraction(PeftModel):
                 kwargs["task_ids"] = task_ids
 
             with self._enable_peft_forward_hooks(**kwargs):
-                kwargs = {k: v for k, v in kwargs.items() if k not in self.special_peft_forward_args}
+                kwargs = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k not in self.special_peft_forward_args
+                }
                 return self.base_model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
@@ -2526,14 +2907,20 @@ class PeftModelForFeatureExtraction(PeftModel):
         batch_size = _get_batch_size(input_ids, inputs_embeds)
         if attention_mask is not None:
             # concat prompt attention mask
-            prefix_attention_mask = torch.ones(batch_size, peft_config.num_virtual_tokens).to(attention_mask.device)
+            prefix_attention_mask = torch.ones(
+                batch_size, peft_config.num_virtual_tokens
+            ).to(attention_mask.device)
             attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
 
         if kwargs.get("position_ids", None) is not None:
-            warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
+            warnings.warn(
+                "Position ids are not supported for parameter efficient tuning. Ignoring position ids."
+            )
             kwargs["position_ids"] = None
         if kwargs.get("token_type_ids", None) is not None:
-            warnings.warn("Token type ids are not supported for parameter efficient tuning. Ignoring token type ids")
+            warnings.warn(
+                "Token type ids are not supported for parameter efficient tuning. Ignoring token type ids"
+            )
             kwargs["token_type_ids"] = None
         kwargs.update(
             {
@@ -2619,7 +3006,9 @@ def get_layer_status(model: torch.nn.Module) -> list[TunerLayerStatus]:
             continue
 
         # determine if all submodules/parameters if this module require grad or not
-        mapping_requires_grad_list: dict[str, list[bool]] = collections.defaultdict(list)
+        mapping_requires_grad_list: dict[str, list[bool]] = collections.defaultdict(
+            list
+        )
         for adapter_module_name in module.adapter_layer_names:
             adapter_module = getattr(module, adapter_module_name)
             if isinstance(adapter_module, torch.nn.ModuleDict):
@@ -2640,14 +3029,21 @@ def get_layer_status(model: torch.nn.Module) -> list[TunerLayerStatus]:
                 return False
             return "irregular"
 
-        requires_grad = {key: check_irrgular(vals) for key, vals in mapping_requires_grad_list.items()}
+        requires_grad = {
+            key: check_irrgular(vals)
+            for key, vals in mapping_requires_grad_list.items()
+        }
 
         devices_dd = collections.defaultdict(list)
-        for adapter_module_name in module.adapter_layer_names + module.other_param_names:
+        for adapter_module_name in (
+            module.adapter_layer_names + module.other_param_names
+        ):
             adapter_module = getattr(module, adapter_module_name)
             if isinstance(adapter_module, torch.nn.ModuleDict):
                 for key, submodule in adapter_module.items():
-                    devices_dd[key].extend([param.device.type for param in submodule.parameters()])
+                    devices_dd[key].extend(
+                        [param.device.type for param in submodule.parameters()]
+                    )
             elif isinstance(adapter_module, torch.nn.ParameterDict) or (
                 adapter_module.__class__.__name__ == "BufferDict"
             ):  # VeRA
@@ -2745,7 +3141,10 @@ def get_model_status(model: torch.nn.Module) -> TunerModelStatus:
         base_model_type = model.get_base_model().__class__.__name__
         trainable_params, total_params = model.get_nb_trainable_parameters()
         base_model = model.base_model
-        peft_types = {key: str(config.peft_type).partition(".")[-1] for key, config in base_model.peft_config.items()}
+        peft_types = {
+            key: str(config.peft_type).partition(".")[-1]
+            for key, config in base_model.peft_config.items()
+        }
         adapter_model_type = base_model.__class__.__name__
     elif isinstance(model, PreTrainedModel):
         base_model_type = model.__class__.__name__
@@ -2763,17 +3162,23 @@ def get_model_status(model: torch.nn.Module) -> TunerModelStatus:
     layer_status = get_layer_status(model)
     num_adapter_layers = len(layer_status)
 
-    enabled_set: set[bool] = {status.enabled for status in layer_status}  # must be {True}, {False}, or {True, False}
+    enabled_set: set[bool] = {
+        status.enabled for status in layer_status
+    }  # must be {True}, {False}, or {True, False}
     enabled: bool | Literal["irregular"]
     if len(enabled_set) == 1:
         enabled = enabled_set.pop()
     else:
         enabled = "irregular"
 
-    available_adapters: list[str] = sorted(set().union(*(status.available_adapters for status in layer_status)))
+    available_adapters: list[str] = sorted(
+        set().union(*(status.available_adapters for status in layer_status))
+    )
 
     # ideally, active adapters should be consistent across all layers of the model, but we cannot guarantee it
-    all_active_adapters: set[tuple[str, ...]] = {tuple(status.active_adapters) for status in layer_status}
+    all_active_adapters: set[tuple[str, ...]] = {
+        tuple(status.active_adapters) for status in layer_status
+    }
     active_adapters: list[str] | Literal["irregular"]
     if not all_active_adapters:
         active_adapters = []
@@ -2802,20 +3207,26 @@ def get_model_status(model: torch.nn.Module) -> TunerModelStatus:
 
     # check status of requires_grad
     # first, merge the values for all layers
-    requires_grad_all: dict[str, list[bool | Literal["irregular"]]] = collections.defaultdict(list)
+    requires_grad_all: dict[str, list[bool | Literal["irregular"]]] = (
+        collections.defaultdict(list)
+    )
     for status in layer_status:
         for key, val in status.requires_grad.items():
             requires_grad_all[key].append(val)
 
     # then, check if the values are consistent
-    def check_irrgular(vals: list[bool | Literal["irregular"]]) -> bool | Literal["irregular"]:
+    def check_irrgular(
+        vals: list[bool | Literal["irregular"]],
+    ) -> bool | Literal["irregular"]:
         if all(val is True for val in vals):
             return True
         if all(val is False for val in vals):
             return False
         return "irregular"
 
-    requires_grad = {key: check_irrgular(vals) for key, vals in requires_grad_all.items()}
+    requires_grad = {
+        key: check_irrgular(vals) for key, vals in requires_grad_all.items()
+    }
 
     devices_dd = collections.defaultdict(list)
     for status in layer_status:

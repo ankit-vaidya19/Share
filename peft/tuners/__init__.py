@@ -24,10 +24,18 @@ from .lokr import LoKrConfig, LoKrModel
 from .ia3 import IA3Config, IA3Model
 from .adalora import AdaLoraConfig, AdaLoraModel
 from .boft import BOFTConfig, BOFTModel
-from .p_tuning import PromptEncoder, PromptEncoderConfig, PromptEncoderReparameterizationType
+from .p_tuning import (
+    PromptEncoder,
+    PromptEncoderConfig,
+    PromptEncoderReparameterizationType,
+)
 from .prefix_tuning import PrefixEncoder, PrefixTuningConfig
 from .prompt_tuning import PromptEmbedding, PromptTuningConfig, PromptTuningInit
-from .multitask_prompt_tuning import MultitaskPromptEmbedding, MultitaskPromptTuningConfig, MultitaskPromptTuningInit
+from .multitask_prompt_tuning import (
+    MultitaskPromptEmbedding,
+    MultitaskPromptTuningConfig,
+    MultitaskPromptTuningInit,
+)
 from .oft import OFTConfig, OFTModel
 from .mixed import MixedModel
 from .poly import PolyConfig, PolyModel
@@ -36,4 +44,4 @@ from .vera import VeraConfig, VeraModel
 from .fourierft import FourierFTConfig, FourierFTModel
 from .xlora import XLoraConfig, XLoraModel
 from .hra import HRAConfig, HRAModel
-from .eigenlora import EigenLoRAConfig, EigenLoRAModel
+from .eigenflux import EigenFluxConfig, EigenFluxModel

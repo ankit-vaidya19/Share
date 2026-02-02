@@ -8,9 +8,9 @@ import torch.nn.functional as F
 from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 
 
-# class EigenLoRA_A_incremental(nn.Module):
+# class EigenFlux_A_incremental(nn.Module):
 #     """
-#     Class that implements a basic EigenLoRA A layer.
+#     Class that implements a basic EigenFlux A layer.
 #     X,768 --> X,34
 #     """
 
@@ -33,7 +33,7 @@ from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 #         self.loadings = nn.Parameter(torch.rand((self.num_components, self.out_dim)))
 #         self.mode = "train"
 
-#     def recalculate_eigenlora(self):
+#     def recalculate_EigenFlux(self):
 #         """
 #         Recalculate the components using prev_components and the updated
 #         rank update vectors
@@ -73,9 +73,9 @@ from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 #         return output
 
 
-# class EigenLoRA_B_incremental(nn.Module):
+# class EigenFlux_B_incremental(nn.Module):
 #     """
-#     Class that implements a basic EigenLoRA B layer.
+#     Class that implements a basic EigenFlux B layer.
 #     X,34 --> X,768
 #     """
 
@@ -98,7 +98,7 @@ from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 #         self.loadings = nn.Parameter(torch.rand((self.num_components, self.in_dim)))
 #         self.mode = "train"
 
-#     def recalculate_eigenlora(self):
+#     def recalculate_EigenFlux(self):
 #         """
 #         Recalculate the components using prev_components and the updated
 #         rank update vectors
@@ -137,9 +137,9 @@ from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 #         return output
 
 
-class EigenLoRA_A_incremental(nn.Module):
+class EigenFlux_A(nn.Module):
     """
-    Class that implements a basic EigenLoRA A layer.
+    Class that implements a basic EigenFlux A layer.
     X,768 --> X,34
     """
 
@@ -153,7 +153,7 @@ class EigenLoRA_A_incremental(nn.Module):
     ):
         super().__init__()
         self.in_dim = in_features  # feature size
-        self.out_dim = out_features  # rank of EigenLoRA
+        self.out_dim = out_features  # rank of EigenFlux
         self.num_components = num_components
         self.components = nn.Parameter(torch.rand((in_features, self.num_components)))
         self.rank_update = rank_update
@@ -164,9 +164,6 @@ class EigenLoRA_A_incremental(nn.Module):
             torch.empty(self.rank_update, out_features).uniform_(-0.5, to=0.5)
         )
         if use_rank_updates == True:
-            # self.rank_update_vectors = nn.Parameter(
-            #     torch.rand((in_features, self.rank_update))
-            # )  # trainable
             self.mode = "new_method"
         else:
             self.mode = "inference"
@@ -174,7 +171,7 @@ class EigenLoRA_A_incremental(nn.Module):
             torch.empty(self.num_components, self.out_dim).uniform_(-0.5, to=0.5)
         )
 
-    def recalculate_eigenlora(self):
+    def recalculate_EigenFlux(self):
         """
         Recalculate the components using prev_components and the updated
         rank update vectors
@@ -219,9 +216,9 @@ class EigenLoRA_A_incremental(nn.Module):
         return output
 
 
-class EigenLoRA_B_incremental(nn.Module):
+class EigenFlux_B(nn.Module):
     """
-    Class that implements a basic EigenLoRA B layer.
+    Class that implements a basic EigenFlux B layer.
     X,34 --> X,768
     """
 
@@ -253,7 +250,7 @@ class EigenLoRA_B_incremental(nn.Module):
             torch.empty(self.num_components, self.in_dim).uniform_(-0.5, to=0.5)
         )
 
-    def recalculate_eigenlora(self):
+    def recalculate_EigenFlux(self):
         """
         Recalculate the components using prev_components and the updated
         rank update vectors
@@ -297,19 +294,19 @@ class EigenLoRA_B_incremental(nn.Module):
         return output
 
 
-class EigenLoRALayer(BaseTunerLayer):
+class EigenFluxLayer(BaseTunerLayer):
     """
-    Modified the LoraLayer class to include EigenLoRA. Changed the update_layer function to add EigenLoRA layer instead of a simple linear layer.
+    Modified the LoraLayer class to include EigenFlux. Changed the update_layer function to add EigenFlux layer instead of a simple linear layer.
     """
 
-    adapter_layer_names = ("eigenlora_A", "eigenlora_B")
+    adapter_layer_names = ("EigenFlux_A", "EigenFlux_B")
 
     def __init__(self, base_layer: nn.Module, **kwargs):
         self.base_layer = base_layer
         self.num_components = {}
 
-        self.eigenlora_A = nn.ModuleDict({})
-        self.eigenlora_B = nn.ModuleDict({})
+        self.EigenFlux_A = nn.ModuleDict({})
+        self.EigenFlux_B = nn.ModuleDict({})
 
         self._disable_adapters = False
         self.merged_adapters = []
@@ -327,22 +324,22 @@ class EigenLoRALayer(BaseTunerLayer):
 
     def recalculate(self, adapter_name):
         """For EigenFLux"""
-        self.eigenlora_A[adapter_name].recalculate_eigenlora()
-        self.eigenlora_B[adapter_name].recalculate_eigenlora()
+        self.EigenFlux_A[adapter_name].recalculate_EigenFlux()
+        self.EigenFlux_B[adapter_name].recalculate_EigenFlux()
 
     def set_mode(self, adapter_name, mode):
         """For 'training' or 'inference' EigenFlux"""
-        self.eigenlora_A[adapter_name].mode = mode
-        self.eigenlora_B[adapter_name].mode = mode
+        self.EigenFlux_A[adapter_name].mode = mode
+        self.EigenFlux_B[adapter_name].mode = mode
 
     def update_layer(
         self, adapter_name, r, num_components, num_rank_updates, use_rank_updates
     ):
-        """Adds the eigenlora to base layer"""
-        self.eigenlora_A[adapter_name] = EigenLoRA_A_incremental(
+        """Adds the EigenFlux to base layer"""
+        self.EigenFlux_A[adapter_name] = EigenFlux_A_incremental(
             num_components, self.in_features, r, num_rank_updates, use_rank_updates
         )
-        self.eigenlora_B[adapter_name] = EigenLoRA_B_incremental(
+        self.EigenFlux_B[adapter_name] = EigenFlux_B_incremental(
             num_components, r, self.out_features, num_rank_updates, use_rank_updates
         )
         self._move_adapter_to_device_of_base_layer(adapter_name)
@@ -384,7 +381,7 @@ class EigenLoRALayer(BaseTunerLayer):
         self._active_adapter = adapter_names
 
 
-class Linear(EigenLoRALayer, nn.Linear):
+class Linear(EigenFluxLayer, nn.Linear):
     """
     This is the class used to instantiate in the model.py file. Modified the forward method. Need to modify merge()
     """
@@ -401,7 +398,7 @@ class Linear(EigenLoRALayer, nn.Linear):
     ) -> None:
         # this gets the init from nn.Linear's super perspective, i.e. nn.Module.__init__, which should always be called
         super(nn.Linear, self).__init__()
-        EigenLoRALayer.__init__(self, base_layer, **kwargs)
+        EigenFluxLayer.__init__(self, base_layer, **kwargs)
         self._active_adapter = adapter_name
         self.update_layer(
             adapter_name, r, num_components, num_rank_updates, use_rank_updates
@@ -429,7 +426,7 @@ class Linear(EigenLoRALayer, nn.Linear):
             return
 
         for active_adapter in adapter_names:
-            if active_adapter in self.eigenlora_A.keys():
+            if active_adapter in self.EigenFlux_A.keys():
                 base_layer = self.get_base_layer()
                 if safe_merge:
                     # Note that safe_merge will be slower than the normal merge
@@ -522,20 +519,20 @@ class Linear(EigenLoRALayer, nn.Linear):
         else:
             result = self.base_layer(x, *args, **kwargs)
             for active_adapter in self.active_adapters:
-                if active_adapter not in self.eigenlora_A.keys():
+                if active_adapter not in self.EigenFlux_A.keys():
                     continue
 
-                eigenlora_A = self.eigenlora_A[active_adapter]
-                eigenlora_B = self.eigenlora_B[active_adapter]
+                EigenFlux_A = self.EigenFlux_A[active_adapter]
+                EigenFlux_B = self.EigenFlux_B[active_adapter]
 
                 # As adapted layers may have different shapes and VeRA contains a single shared pair of A and B matrices,
                 # we initialize these matrices with the largest required size for each dimension.
                 # During the forward pass, required submatrices are sliced out from the shared vera_A and vera_B.
-                x = x.to(eigenlora_A.components.dtype)  # datatype equivalency
-                result = result + eigenlora_B(eigenlora_A(x))
+                x = x.to(EigenFlux_A.components.dtype)  # datatype equivalency
+                result = result + EigenFlux_B(EigenFlux_A(x))
         result = result.to(previous_dtype)
         return result
 
     def __repr__(self) -> str:
         rep = super().__repr__()
-        return "eigenlora." + rep
+        return "EigenFlux." + rep

@@ -88,8 +88,8 @@ from .tuners import (
     XLoraModel,
     HRAConfig,
     HRAModel,
-    EigenLoRAConfig,
-    EigenLoRAModel,
+    EigenFluxConfig,
+    EigenFluxModel,
 )
 from .utils import (
     TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING,

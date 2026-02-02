@@ -57,8 +57,8 @@ def get_peft_model_state_dict(
     adapter_name="default",
     unwrap_compiled=False,
     save_embedding_layers="auto",
-    save_eigenlora_loadings=True,
-    save_eigenlora_components=True,
+    save_eigenflux_loadings=True,
+    save_eigenflux_components=True,
 ):
     """
     Get the state dict of the Peft model.
@@ -221,17 +221,17 @@ def get_peft_model_state_dict(
         }
     elif config.peft_type == PeftType.HRA:
         to_return = {k: state_dict[k] for k in state_dict if "hra_" in k}
-    elif config.peft_type == PeftType.EIGENLORA:
+    elif config.peft_type == PeftType.EIGENFLUX:
         to_return = {}
         components = {}
         loadings = {}
         for k in state_dict:
-            if "eigenlora_" in k:
-                if save_eigenlora_components:
+            if "eigenflux_" in k:
+                if save_eigenflux_components:
                     components.update(
                         {k: state_dict[k] for k in state_dict if "components" in k}
                     )
-                if save_eigenlora_loadings:
+                if save_eigenflux_loadings:
                     loadings.update(
                         {k: state_dict[k] for k in state_dict if "loadings" in k}
                     )
@@ -407,7 +407,7 @@ def set_peft_model_state_dict(
         PeftType.VERA,
         PeftType.FOURIERFT,
         PeftType.HRA,
-        PeftType.EIGENLORA,
+        PeftType.EIGENFLUX,
     ):
         peft_model_state_dict = {}
         parameter_prefix = {
@@ -423,7 +423,7 @@ def set_peft_model_state_dict(
             PeftType.VERA: "vera_lambda_",
             PeftType.FOURIERFT: "fourierft_",
             PeftType.HRA: "hra_",
-            PeftType.EIGENLORA: "eigenlora_",
+            PeftType.EIGENFLUX: "eigenflux_",
         }[config.peft_type]
         for k, v in state_dict.items():
             if parameter_prefix in k:
@@ -439,11 +439,11 @@ def set_peft_model_state_dict(
             else:
                 peft_model_state_dict[k] = v
 
-        # elif config.peft_type == PeftType.EIGENLORA:
+        # elif config.peft_type == PeftType.EIGENFLUX:
         #     if config.load_loadings:
         #         for k, v in state_dict.items():
-        #             if "eigenlora_" in k:
-        #                 suffix = k.split("eigenlora_")[1]
+        #             if "eigenflux_" in k:
+        #                 suffix = k.split("eigenflux_")[1]
         #                 if "." in suffix:
         #                     suffix_to_replace = ".".join(suffix.split(".")[1:])
         #                     k = k.replace(
@@ -456,8 +456,8 @@ def set_peft_model_state_dict(
         #                 peft_model_state_dict[k] = v
         # if config.load_components:
         #     for k, v in state_dict.items():
-        #         if "eigenlora_" in k and "components" in k:
-        #             suffix = k.split("eigenlora_")[1]
+        #         if "eigenflux_" in k and "components" in k:
+        #             suffix = k.split("eigenflux_")[1]
         #             if "." in suffix:
         #                 suffix_to_replace = ".".join(suffix.split(".")[1:])
         #                 k = k.replace(

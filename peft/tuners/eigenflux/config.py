@@ -7,7 +7,7 @@ from peft.utils import PeftType
 
 
 @dataclass
-class EigenLoRAConfig(PeftConfig):
+class EigenFluxConfig(PeftConfig):
     r: int = field(default=32, metadata={"help": "Rank of the Components"})
     num_components: int = field(
         default=15, metadata={"help": "Number of components to use"}
@@ -63,7 +63,7 @@ class EigenLoRAConfig(PeftConfig):
     )
 
     def __post_init__(self):
-        self.peft_type = PeftType.EIGENLORA
+        self.peft_type = PeftType.EIGENFLUX
         self.target_modules = (
             set(self.target_modules)
             if isinstance(self.target_modules, list)

@@ -41,7 +41,7 @@ from .constants import (
     TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING,
     TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING,
     TRANSFORMERS_MODELS_TO_VERA_TARGET_MODULES_MAPPING,
-    TRANSFORMERS_MODELS_TO_EIGENLORA_TARGET_MODULES_MAPPING,
+    TRANSFORMERS_MODELS_TO_EIGENFLUX_TARGET_MODULES_MAPPING,
     WEIGHTS_NAME,
     bloom_model_postprocess_past_key_value,
     starcoder_model_postprocess_past_key_value,
@@ -67,7 +67,7 @@ __all__ = [
     "TRANSFORMERS_MODELS_TO_LNTUNING_TARGET_MODULES_MAPPING",
     "TRANSFORMERS_MODELS_TO_VERA_TARGET_MODULES_MAPPING",
     "TRANSFORMERS_MODELS_TO_FOURIERFT_TARGET_MODULES_MAPPING",
-    "TRANSFORMERS_MODELS_TO_EIGENLORA_TARGET_MODULES_MAPPING",
+    "TRANSFORMERS_MODELS_TO_EIGENFLUX_TARGET_MODULES_MAPPING",
     "WEIGHTS_NAME",
     "INCLUDE_LINEAR_LAYERS_SHORTHAND",
     "bloom_model_postprocess_past_key_value",
@@ -90,7 +90,9 @@ def infer_device() -> str:
     return "cpu"
 
 
-def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, gradient_checkpointing_kwargs=None):
+def prepare_model_for_kbit_training(
+    model, use_gradient_checkpointing=True, gradient_checkpointing_kwargs=None
+):
     r"""
     Note this method only works for `transformers` models.
 
@@ -108,11 +110,15 @@ def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, grad
             `torch.utils.checkpoint.checkpoint` for more details about the arguments that you can pass to that method.
             Note this is only available in the latest transformers versions (> 4.34.1).
     """
-    loaded_in_kbit = getattr(model, "is_loaded_in_8bit", False) or getattr(model, "is_loaded_in_4bit", False)
+    loaded_in_kbit = getattr(model, "is_loaded_in_8bit", False) or getattr(
+        model, "is_loaded_in_4bit", False
+    )
     is_gptq_quantized = getattr(model, "quantization_method", None) == "gptq"
     is_aqlm_quantized = getattr(model, "quantization_method", None) == "aqlm"
     is_eetq_quantized = getattr(model, "quantization_method", None) == "eetq"
-    is_hqq_quantized = getattr(model, "quantization_method", None) == "hqq" or getattr(model, "hqq_quantized", False)
+    is_hqq_quantized = getattr(model, "quantization_method", None) == "hqq" or getattr(
+        model, "hqq_quantized", False
+    )
 
     if gradient_checkpointing_kwargs is None:
         gradient_checkpointing_kwargs = {}
@@ -121,7 +127,12 @@ def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, grad
         # freeze base model's layers
         param.requires_grad = False
 
-    if not is_gptq_quantized and not is_aqlm_quantized and not is_eetq_quantized and not is_hqq_quantized:
+    if (
+        not is_gptq_quantized
+        and not is_aqlm_quantized
+        and not is_eetq_quantized
+        and not is_hqq_quantized
+    ):
         # cast all non INT8 parameters to fp32
         for param in model.parameters():
             if (
@@ -130,10 +141,17 @@ def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, grad
                 param.data = param.data.to(torch.float32)
 
     if (
-        loaded_in_kbit or is_gptq_quantized or is_aqlm_quantized or is_eetq_quantized or is_hqq_quantized
+        loaded_in_kbit
+        or is_gptq_quantized
+        or is_aqlm_quantized
+        or is_eetq_quantized
+        or is_hqq_quantized
     ) and use_gradient_checkpointing:
         # When having `use_reentrant=False` + gradient_checkpointing, there is no need for this hack
-        if "use_reentrant" not in gradient_checkpointing_kwargs or gradient_checkpointing_kwargs["use_reentrant"]:
+        if (
+            "use_reentrant" not in gradient_checkpointing_kwargs
+            or gradient_checkpointing_kwargs["use_reentrant"]
+        ):
             # For backward compatibility
             if hasattr(model, "enable_input_require_grads"):
                 model.enable_input_require_grads()
@@ -142,7 +160,9 @@ def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, grad
                 def make_inputs_require_grad(module, input, output):
                     output.requires_grad_(True)
 
-                model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+                model.get_input_embeddings().register_forward_hook(
+                    make_inputs_require_grad
+                )
 
         # To support older transformers versions, check if the model supports gradient_checkpointing_kwargs
         _supports_gc_kwargs = "gradient_checkpointing_kwargs" in list(
@@ -157,7 +177,9 @@ def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, grad
             )
 
         gc_enable_kwargs = (
-            {} if not _supports_gc_kwargs else {"gradient_checkpointing_kwargs": gradient_checkpointing_kwargs}
+            {}
+            if not _supports_gc_kwargs
+            else {"gradient_checkpointing_kwargs": gradient_checkpointing_kwargs}
         )
 
         # enable gradient checkpointing for memory efficiency
@@ -166,7 +188,9 @@ def prepare_model_for_kbit_training(model, use_gradient_checkpointing=True, grad
 
 
 # copied from transformers.models.bart.modeling_bart
-def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
+def shift_tokens_right(
+    input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int
+):
     """
     Shift input ids one token to the right.
 
@@ -202,10 +226,17 @@ class ModulesToSaveWrapper(torch.nn.Module):
         # Try to anticipate some modules that users could try to target that would not work.
         # Note: It's not possible to check hasattr(module, "forward"), since that returns True for ModuleDict and
         # ModuleList, even though their forward methods cannot be called
-        forbidden_classes = (torch.nn.ModuleDict, torch.nn.ModuleList, torch.nn.ParameterDict, torch.nn.ParameterList)
+        forbidden_classes = (
+            torch.nn.ModuleDict,
+            torch.nn.ModuleList,
+            torch.nn.ParameterDict,
+            torch.nn.ParameterList,
+        )
         if isinstance(self.original_module, forbidden_classes):
             cls_name = self.original_module.__class__.__name__
-            raise TypeError(f"modules_to_save cannot be applied to modules of type {cls_name}")
+            raise TypeError(
+                f"modules_to_save cannot be applied to modules of type {cls_name}"
+            )
 
     @property
     def disable_adapters(self) -> bool:
@@ -231,10 +262,14 @@ class ModulesToSaveWrapper(torch.nn.Module):
             if num_params == 0 and hasattr(param, "ds_numel"):
                 import deepspeed
 
-                context_manager = deepspeed.zero.GatheredParameters(self.original_module.parameters(), modifier_rank=0)
+                context_manager = deepspeed.zero.GatheredParameters(
+                    self.original_module.parameters(), modifier_rank=0
+                )
                 break
         with context_manager:
-            self.modules_to_save.update(torch.nn.ModuleDict({adapter_name: copy.deepcopy(self.original_module)}))
+            self.modules_to_save.update(
+                torch.nn.ModuleDict({adapter_name: copy.deepcopy(self.original_module)})
+            )
 
         if hasattr(self.modules_to_save[adapter_name], "_hf_hook"):
             old_hook = self.modules_to_save[adapter_name]._hf_hook
@@ -302,7 +337,9 @@ class ModulesToSaveWrapper(torch.nn.Module):
             adapter_name (str): The name of the adapter to set as active
         """
         if adapter_name not in self.modules_to_save:
-            raise ValueError(f"Adapter {adapter_name} not found in {self.modules_to_save.keys()}")
+            raise ValueError(
+                f"Adapter {adapter_name} not found in {self.modules_to_save.keys()}"
+            )
 
         self.modules_to_save[self.active_adapter].requires_grad_(False)
         self.modules_to_save[adapter_name].requires_grad_(True)
@@ -325,7 +362,9 @@ def _freeze_adapter(model, adapter_name):
 def _set_trainable(model, adapter_name):
     key_list = [key for key, _ in model.named_modules()]
     for key in key_list:
-        target_module_found = any(key.endswith(target_key) for target_key in model.modules_to_save)
+        target_module_found = any(
+            key.endswith(target_key) for target_key in model.modules_to_save
+        )
         if target_module_found:
             parent, target, target_name = _get_submodules(model, key)
             if isinstance(target, ModulesToSaveWrapper):
@@ -344,7 +383,9 @@ def _set_adapter(model, adapter_name):
 
         # adapter_name is a list of str
         if len(adapter_name) > 1:
-            raise ValueError("Only one adapter can be set at a time for modules_to_save")
+            raise ValueError(
+                "Only one adapter can be set at a time for modules_to_save"
+            )
         elif len(adapter_name) == 0:
             raise ValueError("Please specify at least one adapter to set")
         adapter_name = adapter_name[0]
@@ -400,9 +441,16 @@ def _prepare_prompt_learning_config(peft_config, model_config):
         peft_config.num_attention_heads = num_attention_heads
 
     # For grouped-query attention, see #1901.
-    if peft_config.peft_type == "PREFIX_TUNING" and "num_key_value_heads" in model_config:
+    if (
+        peft_config.peft_type == "PREFIX_TUNING"
+        and "num_key_value_heads" in model_config
+    ):
         num_key_value_heads = model_config["num_key_value_heads"]
-        peft_config.token_dim = peft_config.token_dim // peft_config.num_attention_heads * num_key_value_heads
+        peft_config.token_dim = (
+            peft_config.token_dim
+            // peft_config.num_attention_heads
+            * num_key_value_heads
+        )
         peft_config.num_attention_heads = num_key_value_heads
 
     if getattr(peft_config, "encoder_hidden_size", None) is None:
@@ -418,15 +466,23 @@ def fsdp_auto_wrap_policy(model):
     from accelerate import FullyShardedDataParallelPlugin
 
     if hasattr(FullyShardedDataParallelPlugin, "get_module_class_from_name"):
-        get_module_class_from_name = FullyShardedDataParallelPlugin.get_module_class_from_name
+        get_module_class_from_name = (
+            FullyShardedDataParallelPlugin.get_module_class_from_name
+        )
     else:
         from accelerate.utils.dataclasses import get_module_class_from_name
-    from torch.distributed.fsdp.wrap import _or_policy, lambda_auto_wrap_policy, transformer_auto_wrap_policy
+    from torch.distributed.fsdp.wrap import (
+        _or_policy,
+        lambda_auto_wrap_policy,
+        transformer_auto_wrap_policy,
+    )
 
     from ..tuners import PrefixEncoder, PromptEmbedding, PromptEncoder
 
     default_transformer_cls_names_to_wrap = (
-        ",".join(model._no_split_modules) if getattr(model, "_no_split_modules", None) is not None else ""
+        ",".join(model._no_split_modules)
+        if getattr(model, "_no_split_modules", None) is not None
+        else ""
     )
     transformer_cls_names_to_wrap = os.environ.get(
         "FSDP_TRANSFORMER_CLS_TO_WRAP", default_transformer_cls_names_to_wrap
@@ -435,7 +491,9 @@ def fsdp_auto_wrap_policy(model):
     for layer_class in transformer_cls_names_to_wrap:
         transformer_cls = get_module_class_from_name(model, layer_class)
         if transformer_cls is None:
-            raise Exception("Could not find the transformer layer class to wrap in the model.")
+            raise Exception(
+                "Could not find the transformer layer class to wrap in the model."
+            )
         else:
             transformer_cls_to_wrap.add(transformer_cls)
 
@@ -448,13 +506,17 @@ def fsdp_auto_wrap_policy(model):
             return True
         return False
 
-    lambda_policy = functools.partial(lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn)
+    lambda_policy = functools.partial(
+        lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
+    )
     transformer_wrap_policy = functools.partial(
         transformer_auto_wrap_policy,
         transformer_layer_cls=transformer_cls_to_wrap,
     )
 
-    auto_wrap_policy = functools.partial(_or_policy, policies=[lambda_policy, transformer_wrap_policy])
+    auto_wrap_policy = functools.partial(
+        _or_policy, policies=[lambda_policy, transformer_wrap_policy]
+    )
     return auto_wrap_policy
 
 
@@ -479,7 +541,9 @@ def _is_valid_match(key: str, target_key: str):
     return False
 
 
-def _get_batch_size(input_ids: Optional[torch.Tensor], inputs_embeds: Optional[torch.Tensor]) -> int:
+def _get_batch_size(
+    input_ids: Optional[torch.Tensor], inputs_embeds: Optional[torch.Tensor]
+) -> int:
     """Get the batch size based on either input_ids or input_embeds
 
     Raises an ValueError if both are None.
@@ -601,7 +665,9 @@ def str_to_bool(value: str) -> int:
         raise ValueError(f"invalid truth value {value}")
 
 
-def check_file_exists_on_hf_hub(repo_id: str, filename: str, **kwargs) -> Optional[bool]:
+def check_file_exists_on_hf_hub(
+    repo_id: str, filename: str, **kwargs
+) -> Optional[bool]:
     """Check if a file exists on HF Hub, if check was not successful returns None instead of erroring.
 
     Respect offline mode if set.
