@@ -6,11 +6,11 @@ python run_glue.py \
   --max_seq_length 512 \
   --per_device_train_batch_size 32 \
   --seed 0 \
-  --learning_rate 5e-4 \
+  --learning_rate 5e-3 \
   --lr_scheduler_type 'reduce_lr_on_plateau' \
   --weight_decay 0.1 \
   --warmup_ratio 0.06 \
-  --num_train_epochs 40 \
+  --num_train_epochs 80 \
   --evaluation_strategy epoch \
   --apply_eigenflux True \
   --eigenflux_r 8 \

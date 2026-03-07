@@ -8,135 +8,6 @@ import torch.nn.functional as F
 from peft.tuners.tuners_utils import BaseTunerLayer, check_adapters_to_merge
 
 
-# class EigenFlux_A_incremental(nn.Module):
-#     """
-#     Class that implements a basic EigenFlux A layer.
-#     X,768 --> X,34
-#     """
-
-#     def __init__(
-#         self,
-#         num_components,
-#         in_features,
-#         out_features,
-#         rank_update=2,
-#     ):
-#         super().__init__()
-#         self.in_dim = in_features
-#         self.out_dim = out_features
-#         self.num_components = num_components
-#         self.components = nn.Parameter(torch.rand((in_features, self.num_components)))
-#         self.rank_update = rank_update
-#         self.rank_update_vectors = nn.Parameter(
-#             torch.rand((in_features, self.rank_update))
-#         )  # trainable
-#         self.loadings = nn.Parameter(torch.rand((self.num_components, self.out_dim)))
-#         self.mode = "train"
-
-#     def recalculate_EigenFlux(self):
-#         """
-#         Recalculate the components using prev_components and the updated
-#         rank update vectors
-#         """
-#         recons = torch.sum(
-#             self.components.unsqueeze(0) * self.loadings.t().unsqueeze(1),
-#             dim=-1,
-#         ).t()
-#         reconstructed = torch.cat((recons, self.rank_update_vectors), dim=1)
-#         mean = reconstructed.mean(axis=1, keepdim=True)
-#         reconstructed = reconstructed - mean
-#         cov = torch.mm(reconstructed.t(), reconstructed)
-#         eigenvals, eigenvecs = torch.linalg.eig(cov)
-#         eigenvals = eigenvals.to(torch.float32)
-#         eigenvecs = eigenvecs.to(torch.float32)
-#         eigenvecs = torch.mm(reconstructed, eigenvecs)
-#         eigenvecs = torch.nn.functional.normalize(eigenvecs, p=2, dim=0)
-#         eigenvals, indices = eigenvals.sort(descending=True)
-#         eigenvecs = eigenvecs[:, indices]
-#         self.components = nn.Parameter(eigenvecs[:, : self.num_components])
-#         self.loadings = nn.Parameter(
-#             torch.mm(self.components.t(), recons).squeeze(dim=1)
-#         )
-
-#     def forward(self, x):
-#         recons = torch.sum(
-#             self.components.unsqueeze(0) * self.loadings.t().unsqueeze(1),
-#             dim=-1,
-#         ).t()
-#         if self.mode == "train":
-#             output = torch.cat(
-#                 (torch.matmul(x, recons), torch.matmul(x, self.rank_update_vectors)),
-#                 dim=2,
-#             )
-#         elif self.mode == "inference":
-#             output = torch.matmul(x, recons)
-#         return output
-
-
-# class EigenFlux_B_incremental(nn.Module):
-#     """
-#     Class that implements a basic EigenFlux B layer.
-#     X,34 --> X,768
-#     """
-
-#     def __init__(
-#         self,
-#         num_components,
-#         in_features,
-#         out_features,
-#         rank_update=2,
-#     ):
-#         super().__init__()
-#         self.in_dim = in_features
-#         self.out_dim = out_features
-#         self.num_components = num_components
-#         self.components = nn.Parameter(torch.rand((out_features, self.num_components)))
-#         self.rank_update = rank_update
-#         self.rank_update_vectors = nn.Parameter(
-#             torch.rand((out_features, self.rank_update))
-#         )  # trainable
-#         self.loadings = nn.Parameter(torch.rand((self.num_components, self.in_dim)))
-#         self.mode = "train"
-
-#     def recalculate_EigenFlux(self):
-#         """
-#         Recalculate the components using prev_components and the updated
-#         rank update vectors
-#         """
-#         recons = torch.sum(
-#             self.components.unsqueeze(0) * self.loadings.t().unsqueeze(1),
-#             dim=-1,
-#         ).t()
-#         reconstructed = torch.cat((recons, self.rank_update_vectors), dim=1)
-#         mean = reconstructed.mean(axis=1, keepdim=True)
-#         reconstructed = reconstructed - mean
-#         cov = torch.mm(reconstructed.t(), reconstructed)
-#         eigenvals, eigenvecs = torch.linalg.eig(cov)
-#         eigenvals = eigenvals.to(torch.float32)
-#         eigenvecs = eigenvecs.to(torch.float32)
-#         eigenvecs = torch.mm(reconstructed, eigenvecs)
-#         eigenvecs = torch.nn.functional.normalize(eigenvecs, p=2, dim=0)
-#         eigenvals, indices = eigenvals.sort(descending=True)
-#         eigenvecs = eigenvecs[:, indices]
-#         self.components = nn.Parameter(eigenvecs[:, : self.num_components])
-#         self.loadings = nn.Parameter(
-#             torch.mm(self.components.t(), recons).squeeze(dim=1)
-#         )
-
-#     def forward(self, x):
-#         recons = torch.sum(
-#             self.components.unsqueeze(0) * self.loadings.t().unsqueeze(1),
-#             dim=-1,
-#         ).t()
-#         if self.mode == "train":
-#             output = torch.matmul(
-#                 x, torch.cat((recons, self.rank_update_vectors), dim=1).t()
-#             )
-#         elif self.mode == "inference":
-#             output = torch.matmul(x, recons.t())
-#         return output
-
-
 class EigenFlux_A(nn.Module):
     """
     Class that implements a basic EigenFlux A layer.
@@ -202,12 +73,7 @@ class EigenFlux_A(nn.Module):
             self.components.unsqueeze(0) * self.loadings.t().unsqueeze(1),
             dim=-1,
         ).t()
-        if self.mode == "train":
-            output = torch.cat(
-                (torch.matmul(x, recons), torch.matmul(x, self.rank_update_vectors)),
-                dim=-1,
-            )
-        elif self.mode == "inference":
+        if self.mode == "inference":
             output = torch.matmul(x, recons)
         elif self.mode == "new_method":
             op1 = torch.matmul(x, recons)
@@ -246,7 +112,7 @@ class EigenFlux_B(nn.Module):
             self.mode = "new_method"
         else:
             self.mode = "inference"
-        self.loadings = self.loadings = nn.Parameter(
+        self.loadings = nn.Parameter(
             torch.empty(self.num_components, self.in_dim).uniform_(-0.5, to=0.5)
         )
 
@@ -281,11 +147,7 @@ class EigenFlux_B(nn.Module):
             self.components.unsqueeze(0) * self.loadings.t().unsqueeze(1),
             dim=-1,
         ).t()
-        if self.mode == "train":
-            output = torch.matmul(
-                x, torch.cat((recons, self.rank_update_vectors), dim=1).t()
-            )
-        elif self.mode == "inference":
+        if self.mode == "inference":
             output = torch.matmul(x, recons.t())
         elif self.mode == "new_method":
             op1 = torch.matmul(x, recons.t())
@@ -336,10 +198,10 @@ class EigenFluxLayer(BaseTunerLayer):
         self, adapter_name, r, num_components, num_rank_updates, use_rank_updates
     ):
         """Adds the EigenFlux to base layer"""
-        self.EigenFlux_A[adapter_name] = EigenFlux_A_incremental(
+        self.EigenFlux_A[adapter_name] = EigenFlux_A(
             num_components, self.in_features, r, num_rank_updates, use_rank_updates
         )
-        self.EigenFlux_B[adapter_name] = EigenFlux_B_incremental(
+        self.EigenFlux_B[adapter_name] = EigenFlux_B(
             num_components, r, self.out_features, num_rank_updates, use_rank_updates
         )
         self._move_adapter_to_device_of_base_layer(adapter_name)

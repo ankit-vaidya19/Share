@@ -343,9 +343,9 @@ def main():
 
         prompts, outputs = evaluate_batch(model, tokenizer, instructions, args)
 
-        ids.append(id_list[0])
-        gts.append(gt[0][0] if isinstance(gt[0], list) else gt[0])
-        preds.append(outputs[0])
+        ids.extend(id_list[0])
+        gts.extend(gt[0][0] if isinstance(gt[0], list) else gt[0])
+        preds.extend(outputs[0])
 
     # Save results
     os.makedirs(args.output_dir, exist_ok=True)

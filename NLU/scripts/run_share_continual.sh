@@ -29,28 +29,28 @@ SEED=0
 declare -A TASK_EPOCHS=(
     ["cola"]=80
     ["mrpc"]=30
-    ["rte"]=40
-    ["stsb"]=20
-    ["qnli"]=13
+    ["rte"]=80
+    ["stsb"]=40
+    ["qnli"]=25
     ["sst2"]=60
 )
 
 declare -A TASK_LR=(
-    ["cola"]=4e-4
-    ["mrpc"]=4e-4
-    ["rte"]=5e-4
-    ["stsb"]=4e-4
-    ["qnli"]=4e-4
-    ["sst2"]=5e-4
+    ["cola"]=4e-3
+    ["mrpc"]=4e-3
+    ["rte"]=5e-3
+    ["stsb"]=4e-3
+    ["qnli"]=4e-3
+    ["sst2"]=5e-3
 )
 
 declare -A TASK_BATCH_SIZE=(
-    ["cola"]=16
+    ["cola"]=32
     ["mrpc"]=32
     ["rte"]=32
     ["stsb"]=32
     ["qnli"]=32
-    ["sst2"]=16
+    ["sst2"]=32
 )
 
 declare -A TASK_USE_RANK_UPDATES=(
@@ -66,7 +66,7 @@ declare -A TASK_NUM_LABELS=(
     ["cola"]=2
     ["mrpc"]=2
     ["rte"]=2
-    ["stsb"]=2
+    ["stsb"]=1
     ["qnli"]=2
     ["sst2"]=2
 )
