@@ -52,13 +52,25 @@ Running instructions live in the individual experiment folders:
 
 ## Citation
 ```bibtex
-@misc{kaushik2026sharedlorasubspacesstrict,
-      title={Shared LoRA Subspaces for almost Strict Continual Learning}, 
-      author={Prakhar Kaushik and Ankit Vaidya and Shravan Chaudhari and Rama Chellappa and Alan Yuille},
-      year={2026},
-      eprint={2602.06043},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2602.06043}, 
+@InProceedings{10.1007/978-3-032-37574-2_27,
+author="Kaushik, Prakhar
+and Vaidya, Ankit
+and Chaudhari, Shravan
+and Chellappa, Rama
+and Yuille, Alan",
+editor="Favaro, Paolo
+and Kukelova, Zuzana
+and Maki, Atsuto
+and Rohrbach, Anna
+and Schindler, Konrad
+and Tombari, Federico",
+title="Shared LoRA Subspaces for almost Strict Continual Learning",
+booktitle="Computer Vision -- ECCV 2026",
+year="2026",
+publisher="Springer Nature Switzerland",
+address="Cham",
+pages="480--497",
+abstract="Adapting large pretrained models to new tasks efficiently and continually is crucial for real-world deployment but remains challenging due to catastrophic forgetting and the high cost of retraining. While parameter-efficient tuning methods like low-rank adaptation (LoRA) reduce computational demands, they lack mechanisms for strict continual learning and knowledge integration, without data replay or multi-adapters or MoE. We propose Share, a novel approach to parameter-efficient continual finetuning that learns and dynamically updates a single, shared low-rank subspace, enabling seamless adaptation across multiple tasks and modalities. Share constructs a foundational subspace that extracts core knowledge from past tasks and incrementally integrates new information by identifying essential subspace directions. Knowledge from each new task is incorporated into this evolving subspace, enabling forward knowledge transfer while minimizing catastrophic interference. This approach achieves up to 100{\$}{\$}{\backslash}times {\$}{\$}{\texttimes}reduction in trainable parameters and 281{\$}{\$}{\backslash}times {\$}{\$}{\texttimes}memory savings over traditional LoRA methods, maintaining performance comparable to jointly trained models. A single Share model can replace hundreds of task-specific LoRA adapters, supporting scalable, asynchronous continual learning. Experiments across image classification, natural language understanding, 3D pose estimation, and text-to-image generation validate its effectiveness, making Share a practical and scalable solution for lifelong learning in large-scale AI systems.",
+isbn="978-3-032-37574-2"
 }
 ```
